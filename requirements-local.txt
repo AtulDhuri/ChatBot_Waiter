@@ -1,0 +1,20 @@
+# Lightweight dependency set for running locally with plain Python (no Docker).
+# Skips the heavy/native deps (docling, weasyprint) that are awkward to build
+# on Windows / Python 3.13. The app degrades gracefully:
+#   - PDF parsing falls back to pypdf
+#   - Invoices fall back to HTML instead of PDF
+# For the full feature set, use the Docker image (requirements.txt).
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-multipart==0.0.12
+sqlalchemy==2.0.36
+greenlet==3.1.1
+asyncpg==0.30.0
+pgvector==0.3.6
+openai==1.54.4
+jinja2==3.1.4
+httpx==0.27.2
+pymupdf==1.24.13
+pypdf==5.1.0

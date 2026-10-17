@@ -1,0 +1,543 @@
+{
+  "menu": [
+    {
+      "category": "All Day Breakfast",
+      "name": "Thatte Idli",
+      "description": "Sambhar, gun powder, coconut chutney",
+      "weight_gms": 391,
+      "calories_kcal": 385.57,
+      "price_inr": 1200
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Bedmi Puri Raseele Aloo",
+      "description": "Lentil stuffed fried bread, potato curry, fennel chutney",
+      "weight_gms": 487,
+      "calories_kcal": 952.57,
+      "price_inr": 1200
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Aloo Paratha",
+      "description": "White butter, set curd, panchranga pickle",
+      "weight_gms": 336,
+      "calories_kcal": 626.3,
+      "price_inr": 1250
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Mascarpone Pancakes",
+      "description": "Mascarpone whipped cream, maple syrup",
+      "weight_gms": 306,
+      "calories_kcal": 585.07,
+      "price_inr": 1250
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Bean Sprout & Roasted Beetroot Poha",
+      "description": "Beaten rice, Sriracha peanuts, spices",
+      "weight_gms": 344,
+      "calories_kcal": 850.71,
+      "price_inr": 1400
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Accompaniments",
+      "description": "Crispy bacon, sausages, hash brown, mushroom",
+      "weight_gms": null,
+      "calories_kcal": null,
+      "price_inr": 850
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Eggs to Order",
+      "description": "Organic or local chicken eggs",
+      "weight_gms": null,
+      "calories_kcal": null,
+      "price_inr": 1100
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Mediterranean Omelette",
+      "description": "Feta, olives, tomatoes, spinach",
+      "weight_gms": 275,
+      "calories_kcal": 441.1,
+      "price_inr": 1100
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Shamiana Bread Omelette",
+      "description": "Bread, cheese, mint chutney, ketchup, potato chips",
+      "weight_gms": 310,
+      "calories_kcal": 520.49,
+      "price_inr": 1100
+    },
+    {
+      "category": "All Day Breakfast",
+      "name": "Brûlée French Toast",
+      "description": "Maple syrup, powdered sugar",
+      "weight_gms": 180,
+      "calories_kcal": 515.52,
+      "price_inr": 1600
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Vietnamese Pho",
+      "description": "Vegetable broth, rice noodle, lime, sprouts, scallion, chilli, hoisin",
+      "weight_gms": 355,
+      "calories_kcal": 342.15,
+      "price_inr": 1000
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Jimikand aur Shinghade Ke Kebab",
+      "description": "Spiced yam, water chestnut, walnut chutney",
+      "weight_gms": 263,
+      "calories_kcal": 296.4,
+      "price_inr": 1100
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Jaitooni Pudina Paneer Tikka",
+      "description": "Pepitas, raisin chaat, tomato chutney",
+      "weight_gms": 353,
+      "calories_kcal": 517.15,
+      "price_inr": 1100
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Spanish Socca",
+      "description": "Chickpea, caramelized onion, olives, jalapeno, sour cream",
+      "weight_gms": 284,
+      "calories_kcal": 701.39,
+      "price_inr": 1200
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Buddha Bowl",
+      "description": "Quinoa, chickpeas, edamame, hummus, chipotle aioli",
+      "weight_gms": 308,
+      "calories_kcal": 516.21,
+      "price_inr": 1400
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Memsahib’s Chicken Broth",
+      "description": "Poee bread",
+      "weight_gms": 316,
+      "calories_kcal": 531.83,
+      "price_inr": 1000
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Tortilla Four Ways",
+      "description": "Refried beans, cucumber, guacamole, jalapeno potatoes",
+      "weight_gms": 433,
+      "calories_kcal": null,
+      "price_inr": null
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Paneer/Chicken Wrap",
+      "description": "Green apple relish",
+      "weight_gms": null,
+      "calories_kcal": null,
+      "price_inr": 1350
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Chicken Kare Pan",
+      "description": "Curried chicken bun, pickled vegetables, tonkatsu sauce",
+      "weight_gms": 405,
+      "calories_kcal": 1890.58,
+      "price_inr": 1350
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Ajwaini Chicken Tikka",
+      "description": "Smoked fruit chaat, mint chutney",
+      "weight_gms": 307,
+      "calories_kcal": 265.95,
+      "price_inr": 1350
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Bohri Samosa",
+      "description": "Smoked mutton mince, mint chutney",
+      "weight_gms": 192,
+      "calories_kcal": 409.34,
+      "price_inr": 1750
+    },
+    {
+      "category": "Sharing Plates & Starters",
+      "name": "Kasundi Salmon Tikka",
+      "description": "Quinoa sprouts salad, cashew curry leaf chutney",
+      "weight_gms": 346,
+      "calories_kcal": 455.68,
+      "price_inr": 1950
+    },
+    {
+      "category": "Parsi Specials",
+      "name": "Masala ni Dar",
+      "description": "Parsi style masala dal",
+      "weight_gms": 342,
+      "calories_kcal": 519.5,
+      "price_inr": 1150
+    },
+    {
+      "category": "Parsi Specials",
+      "name": "Patra ma Paneer",
+      "description": "Steamed cottage cheese in banana leaves",
+      "weight_gms": 367,
+      "calories_kcal": 736.63,
+      "price_inr": 1350
+    },
+    {
+      "category": "Parsi Specials",
+      "name": "Lagansara Vegetable Stew",
+      "description": "Sweet, sour, dry vegetable stew",
+      "weight_gms": 328,
+      "calories_kcal": 596.63,
+      "price_inr": 1350
+    },
+    {
+      "category": "Parsi Specials",
+      "name": "Jardaloo Salli Boti",
+      "description": "Lamb in sweet-sour gravy, straw potatoes",
+      "weight_gms": 388,
+      "calories_kcal": 465.21,
+      "price_inr": 2250
+    },
+    {
+      "category": "Parsi Specials",
+      "name": "Patra Ni Machi",
+      "description": "Steamed pomfret in banana leaves",
+      "weight_gms": 335,
+      "calories_kcal": 824.64,
+      "price_inr": 2650
+    },
+    {
+      "category": "Parsi Specials",
+      "name": "Parsi Pulao with Lamb Kebab",
+      "description": null,
+      "weight_gms": 670,
+      "calories_kcal": 1028.25,
+      "price_inr": 2950
+    },
+    {
+      "category": "Nostalgic Shamiana",
+      "name": "Pav Bhaji",
+      "description": "Spicy mashed potato & vegetables, buttered pav",
+      "weight_gms": 387,
+      "calories_kcal": 391.33,
+      "price_inr": 1050
+    },
+    {
+      "category": "Nostalgic Shamiana",
+      "name": "Ragda Pattice",
+      "description": "Potato pattice, dried peas stew",
+      "weight_gms": 370,
+      "calories_kcal": 738.78,
+      "price_inr": 1150
+    },
+    {
+      "category": "Nostalgic Shamiana",
+      "name": "Asparagus Roesti",
+      "description": "Potato roesti, creamed asparagus, Gruyere",
+      "weight_gms": 304,
+      "calories_kcal": 646.61,
+      "price_inr": 1350
+    },
+    {
+      "category": "Nostalgic Shamiana",
+      "name": "Chicken Tikka Sandwich",
+      "description": null,
+      "weight_gms": 374,
+      "calories_kcal": 1857.55,
+      "price_inr": 1350
+    },
+    {
+      "category": "Nostalgic Shamiana",
+      "name": "Kheema Mutter",
+      "description": "Minced lamb, peas, buttered pav",
+      "weight_gms": 369,
+      "calories_kcal": 1820.17,
+      "price_inr": 1550
+    },
+    {
+      "category": "Nostalgic Shamiana",
+      "name": "Goan Pomfret Curry",
+      "description": "Coconut curry, basmati rice",
+      "weight_gms": 688,
+      "calories_kcal": 771.52,
+      "price_inr": 2400
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Chonka Mutter Palak",
+      "description": "Spinach, peas",
+      "weight_gms": 612,
+      "calories_kcal": 852.52,
+      "price_inr": 1250
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Paneer Butter Masala",
+      "description": "Cottage cheese in tomato gravy",
+      "weight_gms": 632,
+      "calories_kcal": 650.33,
+      "price_inr": 1250
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Malai Kofta",
+      "description": "Milk dumpling, saffron gravy",
+      "weight_gms": 653,
+      "calories_kcal": 1244.42,
+      "price_inr": 1250
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Rajma Chawal",
+      "description": "Kidney beans stew, rice",
+      "weight_gms": 688,
+      "calories_kcal": 663.37,
+      "price_inr": 1250
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Bombay Tawa Pulao",
+      "description": "Spicy rice, vegetables, raita",
+      "weight_gms": 566,
+      "calories_kcal": 598.26,
+      "price_inr": 1250
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Millet Khichdi",
+      "description": "Mung bean, pearl millet, curd",
+      "weight_gms": 457,
+      "calories_kcal": 1709.18,
+      "price_inr": 1350
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Chole Kulche",
+      "description": "Chickpeas, leavened bread",
+      "weight_gms": 610,
+      "calories_kcal": 1284.29,
+      "price_inr": 1350
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Pakode wali Kadhi",
+      "description": "Rice, papad chura",
+      "weight_gms": 568,
+      "calories_kcal": 1016.72,
+      "price_inr": 1350
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Risotto Amarillo",
+      "description": "Rice, chilli, corn, arugula, cheese",
+      "weight_gms": 371,
+      "calories_kcal": 517.17,
+      "price_inr": 1350
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Mac n Cheese",
+      "description": "Double cheese sauce, baked",
+      "weight_gms": 247,
+      "calories_kcal": 408.54,
+      "price_inr": 1350
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Orecchiette",
+      "description": "Pasta, celeriac cream, basil oil",
+      "weight_gms": 321,
+      "calories_kcal": 1288.43,
+      "price_inr": 1650
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Yellow Thai Curry",
+      "description": null,
+      "weight_gms": null,
+      "calories_kcal": null,
+      "price_inr": 1350
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Slow Roast Chicken",
+      "description": "Root vegetables, mushrooms, rosemary jus",
+      "weight_gms": 363,
+      "calories_kcal": 630.31,
+      "price_inr": 1550
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Murgh Makhanwala",
+      "description": "Chicken in tomato cashew gravy",
+      "weight_gms": 513,
+      "calories_kcal": 779.25,
+      "price_inr": 1650
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Qalia Mutton",
+      "description": "Lamb curry, naan",
+      "weight_gms": 691,
+      "calories_kcal": 771.85,
+      "price_inr": 1750
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Gosht Pulao",
+      "description": "Mutton pulao, raita",
+      "weight_gms": 660,
+      "calories_kcal": 1062.14,
+      "price_inr": 1750
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Cajun Fish n Chips",
+      "description": "Cornmeal batter, fries, aioli",
+      "weight_gms": 365,
+      "calories_kcal": 381.39,
+      "price_inr": 1750
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Pollo Guisado",
+      "description": "Puerto Rican chicken, parsnip stew",
+      "weight_gms": 236,
+      "calories_kcal": 246.86,
+      "price_inr": 1850
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Lumachine",
+      "description": "Pasta, lamb ragout, parmesan",
+      "weight_gms": 339,
+      "calories_kcal": 1190.91,
+      "price_inr": 1950
+    },
+    {
+      "category": "Comfort Mains",
+      "name": "Duck Adobo",
+      "description": "Chilli peppers, jasmine rice, pakchoy",
+      "weight_gms": 285,
+      "calories_kcal": 422.37,
+      "price_inr": 2800
+    },
+    {
+      "category": "International Grills",
+      "name": "Yaki Onigiri with Grilled Tofu & Pineapple",
+      "description": "Smoked paprika, miso butter",
+      "weight_gms": 374,
+      "calories_kcal": 607.64,
+      "price_inr": 1250
+    },
+    {
+      "category": "International Grills",
+      "name": "Grilled Vegetable Skillet",
+      "description": "Sweet potatoes, corn, eggplant, fondue sauce",
+      "weight_gms": 307,
+      "calories_kcal": 148.56,
+      "price_inr": 1750
+    },
+    {
+      "category": "International Grills",
+      "name": "Herb & Lime Rubbed Salmon",
+      "description": "Tomato salad, pickle",
+      "weight_gms": 202,
+      "calories_kcal": 496.27,
+      "price_inr": 2950
+    },
+    {
+      "category": "International Grills",
+      "name": "Lamb Chops",
+      "description": "Green beans, saffron potato salad",
+      "weight_gms": 349,
+      "calories_kcal": 1087.83,
+      "price_inr": 2950
+    },
+    {
+      "category": "International Grills",
+      "name": "Pork Belly",
+      "description": "Green beans, saffron potato salad",
+      "weight_gms": 354,
+      "calories_kcal": 1058.21,
+      "price_inr": 2600
+    },
+    {
+      "category": "Desserts",
+      "name": "Brownie Sundae",
+      "description": "Waffle cup, butterscotch ice cream, hot chocolate brownie, almond brittle",
+      "weight_gms": 262,
+      "calories_kcal": 818.1,
+      "price_inr": 1350
+    },
+    {
+      "category": "Desserts",
+      "name": "Basque Cheese Cake",
+      "description": "Spanish cheesecake, cherry compote, vanilla Chantilly cream",
+      "weight_gms": 149,
+      "calories_kcal": 462.97,
+      "price_inr": 1350
+    },
+    {
+      "category": "Desserts",
+      "name": "Tiramisu",
+      "description": "Kahlua-soaked ladyfinger biscuit, mascarpone cheese",
+      "weight_gms": 225,
+      "calories_kcal": 745.72,
+      "price_inr": 1350
+    },
+    {
+      "category": "Desserts",
+      "name": "Rasmalai",
+      "description": "Poached cottage cheese dumplings in saffron milk, pistachio slivers",
+      "weight_gms": 172,
+      "calories_kcal": 224.34,
+      "price_inr": 1000
+    },
+    {
+      "category": "Desserts",
+      "name": "Apple Crumble with Vanilla Ice Cream",
+      "description": null,
+      "weight_gms": 200,
+      "calories_kcal": 367.88,
+      "price_inr": 1100
+    },
+    {
+      "category": "Desserts",
+      "name": "Spiced Carrot Cake",
+      "description": "Carrot cake, mascarpone frosting, carrot-orange jelly, pineapple compote",
+      "weight_gms": 141,
+      "calories_kcal": 417.23,
+      "price_inr": 1350
+    },
+    {
+      "category": "Desserts",
+      "name": "Baked Almond Cake",
+      "description": "Vanilla ice cream, toffee almond crumble, almond milk sauce",
+      "weight_gms": 124,
+      "calories_kcal": 471.45,
+      "price_inr": 1350
+    },
+    {
+      "category": "Desserts",
+      "name": "Vegan Hazelnut Chocolate Cake",
+      "description": "Vegan biscuit, hazelnut dark chocolate mousse",
+      "weight_gms": 174,
+      "calories_kcal": 792.95,
+      "price_inr": 1000
+    }
+  ],
+  "restaurant": "shamiana",
+  "name": "Shamiana Mumbai Colaba",
+  "currency": "₹"
+}

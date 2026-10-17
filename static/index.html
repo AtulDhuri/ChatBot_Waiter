@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo Bistro — Chatbot Waiter</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        color: #222;
+        background: #faf7f5;
+      }
+      .hero {
+        background: linear-gradient(135deg, #e4572e, #b5341a);
+        color: #fff;
+        padding: 72px 20px 96px;
+        text-align: center;
+      }
+      .hero h1 { font-size: 40px; margin: 0 0 12px; }
+      .hero p { font-size: 18px; opacity: 0.95; margin: 0 auto; max-width: 560px; }
+      .wrap { max-width: 920px; margin: -56px auto 40px; padding: 0 20px; }
+      .card {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        padding: 28px;
+        margin-bottom: 20px;
+      }
+      .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .step { text-align: center; padding: 10px; }
+      .step .n {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: #e4572e; color: #fff; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 10px;
+      }
+      .cta {
+        display: inline-block; background: #e4572e; color: #fff;
+        text-decoration: none; padding: 14px 24px; border-radius: 12px;
+        font-weight: 600; border: none; font-size: 16px; cursor: pointer;
+      }
+      .muted { color: #777; font-size: 14px; }
+      code { background: #f1ece9; padding: 2px 6px; border-radius: 6px; }
+      @media (max-width: 640px) {
+        .hero h1 { font-size: 30px; }
+        .steps { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="hero">
+      <h1>🍽️ Demo Bistro</h1>
+      <p>
+        Scan, chat, and order. Our AI waiter answers menu questions, takes your
+        order, and prints your bill — right from your phone.
+      </p>
+    </section>
+
+    <div class="wrap">
+      <div class="card">
+        <h2>Try it now</h2>
+        <p class="muted">
+          Tap the chat button in the bottom-right corner, enter a table number
+          (any number works for the demo), then ask things like
+          <em>"What vegetarian dishes do you have?"</em> or type
+          <code>menu</code> / <code>bill</code>.
+        </p>
+        <button class="cta" onclick="ChatbotWaiter.open()">
+          Start chatting →
+        </button>
+      </div>
+
+      <div class="card">
+        <h2>How it works</h2>
+        <div class="steps">
+          <div class="step">
+            <div class="n">1</div>
+            <strong>Enter table #</strong>
+            <p class="muted">Your session is tied to your table.</p>
+          </div>
+          <div class="step">
+            <div class="n">2</div>
+            <strong>Ask &amp; order</strong>
+            <p class="muted">AI answers from the real menu and builds your cart.</p>
+          </div>
+          <div class="step">
+            <div class="n">3</div>
+            <strong>Get the bill</strong>
+            <p class="muted">Totals and tax calculated instantly.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>For restaurants</h2>
+        <p class="muted">
+          Plug-and-play: upload your PDF menu on the
+          <a href="/admin.html">admin page</a>, then embed one line on your
+          site:
+        </p>
+        <pre style="overflow:auto"><code>&lt;script src="https://your-host/widget.js"
+        data-api="https://your-host"
+        data-restaurant="demo"&gt;&lt;/script&gt;</code></pre>
+        <p class="muted" style="margin-top:16px">
+          <a href="/admin.html">📤 Upload a menu (per restaurant)</a>
+          &nbsp;·&nbsp;
+          <a href="/qr.html">🔳 Generate table QR codes</a>
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Multi-tenant: test different restaurants</h2>
+        <p class="muted">
+          Each restaurant is a <strong>slug</strong>. Upload a menu under a slug
+          on the <a href="/admin.html">admin page</a>, then open the ordering
+          page scoped to that slug — the QR codes do this automatically:
+        </p>
+        <ul class="muted">
+          <li><a href="/?r=demo">/?r=demo</a> — the demo restaurant</li>
+          <li><a href="/?r=seaside-grill">/?r=seaside-grill</a> — a second tenant</li>
+          <li><a href="/?r=demo&amp;t=12">/?r=demo&amp;t=12</a> — demo, table 12 pre-filled</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- The embeddable widget. data-api="" uses same origin. -->
+    <script src="/config.js"></script>
+    <script src="/widget.js?v=2" data-api="" data-restaurant="demo"></script>
+  </body>
+</html>

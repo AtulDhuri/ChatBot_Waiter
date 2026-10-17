@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Secrets & local env (NEVER ship these into the image)
+.env
+.ENV
+.env.*
+!.env.example
+
+# Local data / uploads
+data/
+uploads/
+*.pdf
+
+# Dev tooling & docs
+.git/
+.gitignore
+.vscode/
+.idea/
+*.md
+docker-compose*.yml
+render.yaml
+Dockerfile
+.dockerignore
+
+# OS cruft
+.DS_Store
+Thumbs.db

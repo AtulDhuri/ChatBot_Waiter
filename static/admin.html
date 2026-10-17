@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin — Upload Menu</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        background: #faf7f5; color: #222; margin: 0; padding: 40px 16px;
+      }
+      .card {
+        max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,.08); padding: 28px;
+      }
+      h1 { margin-top: 0; }
+      label { display: block; font-weight: 600; margin: 14px 0 6px; }
+      input[type="text"], input[type="file"] {
+        width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 10px;
+        font-size: 14px;
+      }
+      button {
+        margin-top: 18px; background: #e4572e; color: #fff; border: none;
+        padding: 12px 20px; border-radius: 10px; font-size: 15px; cursor: pointer;
+      }
+      button:disabled { opacity: .6; cursor: default; }
+      .status { margin-top: 16px; font-size: 14px; white-space: pre-wrap; }
+      .ok { color: #2e9e5b; } .err { color: #c0392b; } .warn { color: #c77700; }
+      .muted { color: #777; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Upload Menu</h1>
+      <p class="muted">
+        Upload your restaurant's menu as a <strong>PDF</strong> or a
+        <strong>JSON</strong> file. We parse it, extract items, and index it for
+        the AI waiter. <strong>To update prices,</strong> re-upload under the
+        same slug — it fully replaces the old menu.
+      </p>
+
+      <label for="restaurant">Restaurant slug (unique per outlet)</label>
+      <input id="restaurant" type="text" value="demo" />
+      <p class="muted" style="margin-top:4px">
+        This is the outlet's unique ID and goes in its QR codes. For a chain,
+        use distinct slugs per branch, e.g. <code>pizza-hub-downtown</code>,
+        <code>pizza-hub-airport</code>.
+      </p>
+
+      <label for="name">Display name (shown to guests, can repeat)</label>
+      <input id="name" type="text" placeholder="e.g. Pizza Hub" />
+
+      <label for="file">Menu file (PDF or JSON)</label>
+      <input id="file" type="file" accept="application/pdf,application/json,.pdf,.json" />
+      <p class="muted" style="margin-top:4px">
+        JSON may be a flat <code>{"menu": [...]}</code> list or a nested
+        <code>{"categories": [...]}</code> structure.
+      </p>
+
+      <label for="upi">UPI ID (for payment QR)</label>
+      <input id="upi" type="text" placeholder="e.g. yourname@okbank" />
+      <p class="muted" style="margin-top:4px">
+        Guests pay to this UPI ID. The bill amount is filled in automatically.
+        Leave blank to keep the current one.
+      </p>
+
+      <label for="upiName">Payee name shown to guests</label>
+      <input id="upiName" type="text" placeholder="e.g. Seaside Grill" />
+
+      <button id="go">Upload &amp; Ingest</button>
+      <button id="saveUpi" style="background:#2e9e5b;margin-left:8px">
+        Save UPI only
+      </button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <script>
+      // ---- Staff auth ----
+      var TOKEN_KEY = "waiter_staff_token";
+      function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
+      function promptToken(force) {
+        if (!force && getToken()) return;
+        var t = window.prompt("Enter staff access token:", getToken());
+        if (t !== null) localStorage.setItem(TOKEN_KEY, t.trim());
+      }
+      function sfetch(url, opts) {
+        opts = opts || {};
+        opts.headers = opts.headers || {};
+        opts.headers["X-Staff-Token"] = getToken();
+        return fetch(url, opts).then(function (r) {
+          if (r.status === 401) { promptToken(true); throw new Error("Staff auth required"); }
+          return r;
+        });
+      }
+      promptToken(false);
+
+      var go = document.getElementById("go");
+      var statusEl = document.getElementById("status");
+      go.addEventListener("click", function () {
+        var file = document.getElementById("file").files[0];
+        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
+        var upi = document.getElementById("upi").value.trim();
+        var upiName = document.getElementById("upiName").value.trim();
+        if (!file) {
+          statusEl.className = "status err";
+          statusEl.textContent = "Please choose a PDF or JSON file.";
+          return;
+        }
+        // Loose VPA check: must look like 'handle@provider'.
+        if (upi && !/^[^@\s]+@[^@\s]+$/.test(upi)) {
+          statusEl.className = "status err";
+          statusEl.textContent =
+            "That UPI ID doesn't look valid. Expected format: name@bank";
+          return;
+        }
+        var displayName = document.getElementById("name").value.trim();
+        var isJson =
+          file.type === "application/json" ||
+          /\.json$/i.test(file.name || "");
+
+        go.disabled = true;
+        statusEl.className = "status";
+        statusEl.textContent = "Uploading and parsing… this can take a moment.";
+
+        // Shared success/error renderer for both upload paths.
+        function render(data) {
+          // A hard failure indexes nothing. A warning (e.g. embeddings fell
+          // back offline) still saves the menu, so treat it as success + note.
+          if (data.error && !data.chunks) {
+            statusEl.className = "status err";
+            statusEl.textContent = "Error: " + data.error;
+          } else {
+            statusEl.className = data.error ? "status warn" : "status ok";
+            statusEl.textContent =
+              "Done! Indexed " + data.chunks + " text chunks and " +
+              data.menu_items + " menu items for '" + data.restaurant + "'." +
+              (upi ? "\nPayment UPI linked: " + upi : "") +
+              (data.error ? "\n\nNote: " + data.error : "");
+          }
+        }
+        function fail(e) {
+          statusEl.className = "status err";
+          statusEl.textContent = "Upload failed: " + e.message;
+        }
+        function done() { go.disabled = false; }
+
+        if (isJson) {
+          // JSON path -> /crawl/json. Read the file, merge in the form fields
+          // (restaurant/name/UPI), and post as application/json.
+          var reader = new FileReader();
+          reader.onload = function () {
+            var payload;
+            try {
+              payload = JSON.parse(reader.result);
+            } catch (err) {
+              fail(new Error("Invalid JSON: " + err.message));
+              done();
+              return;
+            }
+            if (typeof payload !== "object" || payload === null) {
+              fail(new Error("JSON root must be an object."));
+              done();
+              return;
+            }
+            // Form fields take precedence over anything in the file.
+            payload.restaurant = restaurant;
+            if (displayName) payload.name = displayName;
+            if (upi) payload.upi_vpa = upi;
+            if (upiName) payload.upi_name = upiName;
+            sfetch("/crawl/json", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            })
+              .then(function (r) {
+                return r.json().then(function (d) {
+                  if (!r.ok) {
+                    var msg = d.detail
+                      ? (typeof d.detail === "string"
+                          ? d.detail
+                          : JSON.stringify(d.detail))
+                      : "upload failed (" + r.status + ")";
+                    throw new Error(msg);
+                  }
+                  return d;
+                });
+              })
+              .then(render)
+              .catch(fail)
+              .finally(done);
+          };
+          reader.onerror = function () {
+            fail(new Error("Could not read the file."));
+            done();
+          };
+          reader.readAsText(file);
+          return;
+        }
+
+        // PDF path -> /crawl (multipart).
+        var fd = new FormData();
+        fd.append("file", file);
+        fd.append("restaurant", restaurant);
+        if (displayName) fd.append("name", displayName);
+        if (upi) fd.append("upi_vpa", upi);
+        if (upiName) fd.append("upi_name", upiName);
+        sfetch("/crawl", { method: "POST", body: fd })
+          .then(function (r) { return r.json(); })
+          .then(render)
+          .catch(fail)
+          .finally(done);
+      });
+
+      // Save/update UPI without re-uploading the menu.
+      var saveUpi = document.getElementById("saveUpi");
+      saveUpi.addEventListener("click", function () {
+        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
+        var upi = document.getElementById("upi").value.trim();
+        var upiName = document.getElementById("upiName").value.trim();
+        if (!upi || !/^[^@\s]+@[^@\s]+$/.test(upi)) {
+          statusEl.className = "status err";
+          statusEl.textContent = "Enter a valid UPI ID (name@bank) to save.";
+          return;
+        }
+        saveUpi.disabled = true;
+        statusEl.className = "status";
+        statusEl.textContent = "Saving UPI…";
+        sfetch("/pay/upi", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            restaurant: restaurant,
+            upi_vpa: upi,
+            upi_name: upiName,
+          }),
+        })
+          .then(function (r) {
+            return r.json().then(function (d) {
+              if (!r.ok) throw new Error(d.detail || "save failed");
+              return d;
+            });
+          })
+          .then(function (d) {
+            statusEl.className = "status ok";
+            statusEl.textContent =
+              "UPI saved for '" + d.restaurant + "': " + d.upi_vpa;
+          })
+          .catch(function (e) {
+            statusEl.className = "status err";
+            statusEl.textContent = "Couldn't save UPI: " + e.message;
+          })
+          .finally(function () { saveUpi.disabled = false; });
+      });
+
+      // Prefill the UPI fields with whatever is currently stored for the slug.
+      function loadUpi() {
+        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
+        fetch("/pay/upi?restaurant=" + encodeURIComponent(restaurant))
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.upi_vpa) document.getElementById("upi").value = d.upi_vpa;
+            if (d.upi_name) document.getElementById("upiName").value = d.upi_name;
+          })
+          .catch(function () {});
+      }
+      document.getElementById("restaurant").addEventListener("change", loadUpi);
+      window.addEventListener("load", loadUpi);
+    </script>
+  </body>
+</html>

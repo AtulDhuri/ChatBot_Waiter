@@ -1,0 +1,52 @@
+# Render Blueprint for the Chatbot Waiter backend.
+# Deploy: push this repo to GitHub, then in Render choose "New +" ->
+# "Blueprint" and point it at the repo. Render reads this file.
+#
+# DB is Supabase (external), so no Render Postgres is provisioned here — you
+# only set DATABASE_URL to your Supabase connection string.
+services:
+  - type: web
+    name: chatbot-waiter
+    runtime: docker
+    plan: starter          # bump to "standard" for more memory (Docling is heavy)
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # ---- Database (Supabase) ----
+      # Set this in the Render dashboard (marked sync:false so it is NOT
+      # committed). Use the transaction pooler URI (port 6543).
+      - key: DATABASE_URL
+        sync: false
+
+      # ---- OpenAI / LLM ----
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CHAT_MODEL
+        value: gpt-4o-mini
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: EMBEDDING_DIM
+        value: "1536"
+
+      # ---- App ----
+      - key: RESTAURANT_NAME
+        value: Demo Bistro
+      - key: CURRENCY
+        value: "$"
+      - key: CORS_ORIGINS
+        value: "*"
+      # Signing key for session tokens — generated once by Render.
+      - key: SESSION_SECRET
+        generateValue: true
+      # Staff token for kitchen/reports/admin access.
+      - key: STAFF_TOKEN
+        generateValue: true
+
+      # ---- Retrieval ----
+      - key: TOP_K
+        value: "5"
+      - key: CHUNK_SIZE
+        value: "800"
+      - key: CHUNK_OVERLAP
+        value: "150"
