@@ -24,25 +24,97 @@
     }
   }
 
-  // Restaurant resolution order (multi-tenant):
-  //   1. ?r= / ?restaurant= in the URL  (what a scanned QR code carries)
-  //   2. data-restaurant attribute on the <script> tag
-  //   3. "demo" fallback
+  // Derive the API base from the widget's own <script src>. This is the heart
+  // of "plug and play": a restaurant only needs
+  //   <script src="https://your-host/widget.js" data-restaurant="slug"></script>
+  // and the widget talks back to the host it was loaded from — no separate
+  // data-api to set (and get wrong). An explicit data-api still overrides this
+  // for the rare cross-host setup. Same-origin embeds resolve to "" (relative),
+  // exactly as before.
+  function apiBaseFromScript() {
+    try {
+      var src = currentScript && currentScript.src;
+      if (!src) return "";
+      var u = new URL(src, window.location.href);
+      // If the widget is served from the same origin as the page, keep using a
+      // relative base ("") so it works behind proxies/path rewrites.
+      if (u.origin === window.location.origin) return "";
+      return u.origin;
+    } catch (e) {
+      return "";
+    }
+  }
+
+  // Tenant identity resolution.
+  //   `qrToken`  : opaque token from the table sticker (?r=<token>). This is
+  //                the ONLY tenant reference a customer holds — the slug/id are
+  //                resolved server-side and never sent to the browser.
+  //   `legacySlug`: a plaintext slug via data-restaurant / ?restaurant=. Kept
+  //                only for same-origin demo/admin pages; real QR flows use a
+  //                token. Never shown to the customer.
   var CONFIG = {
-    apiBase: (currentScript && currentScript.getAttribute("data-api")) || "",
-    restaurant:
-      urlParam("r") ||
+    // data-api is now optional: default to the origin the script came from.
+    apiBase:
+      (currentScript && currentScript.getAttribute("data-api")) ||
+      apiBaseFromScript(),
+    // ?r= is now an opaque QR token (not a slug). We still read ?restaurant= /
+    // data-restaurant as a legacy slug fallback for demo pages.
+    qrToken: urlParam("r"),
+    legacySlug:
       urlParam("restaurant") ||
       (currentScript && currentScript.getAttribute("data-restaurant")) ||
-      "demo",
-    // Optional table number carried by the QR code (?t=12).
+      null,
+    // Optional table number carried by legacy slug links (?t=12). Token flows
+    // carry the table inside the token, so this is unused there.
     presetTable: urlParam("t") || urlParam("table") || null,
     currency: "$",
     title: "Waiter",
   };
 
-  // Namespacing the session by tenant keeps carts separate per restaurant.
-  var SESSION_KEY = "waiter_session_" + CONFIG.restaurant;
+  // Decide whether ?r= looks like an opaque token vs. a legacy slug. Tokens are
+  // URL-safe base64 from secrets.token_urlsafe(16): ~22 chars, include - or _
+  // or mixed case, and never look like a tidy human slug. We treat a value as a
+  // token when it's long enough; short, lowercase, hyphenated values fall back
+  // to the legacy slug path so existing /?r=demo links still work.
+  function looksLikeToken(v) {
+    if (!v) return false;
+    if (v.length < 16) return false; // demo slugs are short
+    return /[A-Z_]/.test(v) || v.length >= 20;
+  }
+
+  // Resolve the effective tenant reference used only for namespacing local
+  // storage (NOT sent anywhere as a slug when it's a token).
+  var IS_TOKEN = looksLikeToken(CONFIG.qrToken);
+  // A legacy slug is used directly only when ?r= is not a token.
+  var LEGACY_SLUG = IS_TOKEN
+    ? null
+    : (CONFIG.qrToken || CONFIG.legacySlug || "demo");
+
+  // Stable per-browser device id so a rescan can continue this device's cart.
+  // Stored in localStorage (survives tab close) under a global key.
+  function getDeviceId() {
+    var KEY = "waiter_device_id";
+    try {
+      var id = localStorage.getItem(KEY);
+      if (!id) {
+        id =
+          (window.crypto && window.crypto.randomUUID
+            ? window.crypto.randomUUID()
+            : "d-" + Math.random().toString(36).slice(2) + Date.now().toString(36));
+        localStorage.setItem(KEY, id);
+      }
+      return id;
+    } catch (e) {
+      // Private mode / storage blocked: fall back to an ephemeral id.
+      return "d-" + Math.random().toString(36).slice(2);
+    }
+  }
+  var DEVICE_ID = getDeviceId();
+
+  // Namespace the session cache per tenant reference (token or slug) so carts
+  // for different tables/restaurants on the same device stay separate.
+  var SESSION_KEY =
+    "waiter_session_" + (IS_TOKEN ? CONFIG.qrToken : LEGACY_SLUG || "demo");
 
   // ---- State ------------------------------------------------------------
   var state = {
@@ -50,11 +122,16 @@
     tableNumber: null,
     orderType: null, // 'dine_in' | 'takeaway'
     customerName: null, // for takeaway
+    zone: null, // pricing zone label (from the token/table); display only
     cart: [], // [{name, price, quantity}]
     open: false,
     menu: [], // cached menu items for NL order matching
     lastDish: null, // last dish the guest/bot referenced (for "2 of it")
     pendingOrder: null, // {item, quantity} awaiting a yes/no confirmation
+    statusTimer: null, // interval id for polling this session's order statuses
+    statusNode: null, // the live-updating "your orders" card in the transcript
+    billNode: null, // the live bill card in the transcript (auto-refreshes)
+    billPayBtn: null, // the "Pay now" button under the live bill
   };
 
   // ---- Helpers ----------------------------------------------------------
@@ -123,6 +200,7 @@
           tableNumber: state.tableNumber,
           orderType: state.orderType,
           customerName: state.customerName,
+          zone: state.zone,
           cart: state.cart,
         })
       );
@@ -138,7 +216,16 @@
       state.tableNumber = data.tableNumber || null;
       state.orderType = data.orderType || null;
       state.customerName = data.customerName || null;
-      state.cart = Array.isArray(data.cart) ? data.cart : [];
+      state.zone = data.zone || null;
+      // Cart restore policy:
+      //   - Token flow: the SERVER is the source of truth. resolveQrToken runs
+      //     on boot and sets the cart authoritatively ([] for a fresh session,
+      //     or the stored cart for a continued one). Restoring the cached cart
+      //     here would resurrect a previous (ended) session's items before
+      //     resolve completes, so we DO NOT restore it for the token flow.
+      //   - Legacy slug flow: there is no server resolve on boot, so the cache
+      //     is the only cart source; restore it.
+      state.cart = (!IS_TOKEN && Array.isArray(data.cart)) ? data.cart : [];
     } catch (e) {}
   }
 
@@ -170,6 +257,11 @@
       ".wa-cat-chips{overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;}" +
       ".wa-chip-on{background:#e4572e;color:#fff;}" +
       ".wa-add{background:#2e9e5b;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap;}" +
+      ".wa-mi-action{display:flex;align-items:center;gap:6px;}" +
+      ".wa-mi-remove{color:#b53030;font-size:16px;line-height:1;}" +
+      ".wa-bill-updating{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,.78);border-radius:10px;font-size:13px;color:#555;font-weight:600;}" +
+      ".wa-spinner{width:16px;height:16px;border:2px solid #d9d9d9;border-top-color:#e4572e;border-radius:50%;display:inline-block;animation:wa-spin .7s linear infinite;}" +
+      "@keyframes wa-spin{to{transform:rotate(360deg);}}" +
       ".wa-footer{border-top:1px solid #eee;padding:10px;background:#fff;}" +
       ".wa-row{display:flex;gap:8px;}" +
       ".wa-input{flex:1;border:1px solid #ddd;border-radius:10px;padding:10px;font-size:14px;outline:none;}" +
@@ -185,8 +277,9 @@
       ".wa-bill .tot{font-weight:700;border-top:1px solid #ccc;}" +
       ".wa-cart-card{background:#fff;border:1px solid #eee;border-radius:10px;padding:10px;}" +
       ".wa-cart-title{font-weight:700;margin-bottom:6px;color:#e4572e;}" +
-      ".wa-cart-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;}" +
+      ".wa-cart-row{display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f0f0f0;}" +
       ".wa-cart-info{flex:1;padding-right:8px;}" +
+      ".wa-item-note{margin-top:6px;width:100%;font-size:13px;padding:7px 9px;resize:vertical;min-height:38px;line-height:1.35;font-family:inherit;}" +
       ".wa-qty{display:flex;align-items:center;gap:6px;}" +
       ".wa-qty-btn{width:26px;height:26px;border-radius:6px;border:1px solid #ddd;background:#f7f7f8;font-size:16px;line-height:1;cursor:pointer;color:#333;}" +
       ".wa-qty-n{min-width:18px;text-align:center;font-size:14px;}" +
@@ -201,6 +294,36 @@
       ".wa-pay-link{display:inline-block;margin:6px 0;background:#2e9e5b;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-size:14px;}" +
       ".wa-order-card{background:#eafaf0;border:1px solid #bfe8cf;border-radius:12px;padding:14px;text-align:center;}" +
       ".wa-order-no{font-size:22px;font-weight:800;color:#2e9e5b;margin-bottom:4px;}" +
+      ".wa-status-card{background:#fff;border:1px solid #ececec;border-radius:14px;padding:14px;box-shadow:0 2px 10px rgba(0,0,0,.04);}" +
+      ".wa-status-title{font-weight:700;font-size:14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}" +
+      ".wa-status-live{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:#2e9e5b;text-transform:uppercase;letter-spacing:.4px;}" +
+      ".wa-live-dot{width:7px;height:7px;border-radius:50%;background:#2e9e5b;box-shadow:0 0 0 0 rgba(46,158,91,.5);animation:wa-pulse 1.8s infinite;}" +
+      "@keyframes wa-pulse{0%{box-shadow:0 0 0 0 rgba(46,158,91,.5);}70%{box-shadow:0 0 0 6px rgba(46,158,91,0);}100%{box-shadow:0 0 0 0 rgba(46,158,91,0);}}" +
+      ".wa-status-row{border-top:1px solid #f1f1f1;padding:12px 0 4px;}" +
+      ".wa-status-row:first-of-type{border-top:none;padding-top:2px;}" +
+      ".wa-status-head{display:flex;justify-content:space-between;align-items:center;}" +
+      ".wa-status-no{font-weight:700;font-size:13px;color:#222;}" +
+      ".wa-status-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;}" +
+      ".wa-st-paid{background:#eef2ff;color:#3b53c0;}" +
+      ".wa-st-preparing{background:#fff5e0;color:#a5720a;}" +
+      ".wa-st-served{background:#eafaf0;color:#2e9e5b;}" +
+      ".wa-st-cancelled{background:#fdecec;color:#b53030;}" +
+      // ---- Connected progress tracker ----
+      ".wa-track{position:relative;margin:16px 4px 6px;}" +
+      ".wa-track-line{position:absolute;top:11px;left:11px;right:11px;height:3px;background:#ececec;border-radius:3px;overflow:hidden;}" +
+      ".wa-track-fill{height:100%;background:#2e9e5b;border-radius:3px;transition:width .45s ease;}" +
+      ".wa-track-nodes{position:relative;display:flex;justify-content:space-between;}" +
+      ".wa-node{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;}" +
+      ".wa-node-dot{width:23px;height:23px;border-radius:50%;background:#fff;border:2px solid #dcdcdc;color:#aaa;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all .3s ease;}" +
+      ".wa-node-label{font-size:10px;color:#9a9a9a;font-weight:600;transition:color .3s ease;}" +
+      ".wa-node.done .wa-node-dot{background:#2e9e5b;border-color:#2e9e5b;color:#fff;}" +
+      ".wa-node.done .wa-node-label{color:#2e9e5b;}" +
+      ".wa-node.active .wa-node-dot{background:#fff;border-color:#2e9e5b;color:#2e9e5b;box-shadow:0 0 0 0 rgba(46,158,91,.45);animation:wa-pulse 1.8s infinite;}" +
+      ".wa-node.active .wa-node-label{color:#2e9e5b;font-weight:700;}" +
+      ".wa-status-cancel-note{font-size:12px;color:#b53030;margin:10px 0 2px;}" +
+      ".wa-status-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding-top:9px;border-top:1px dashed #eee;}" +
+      ".wa-status-total-label{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.4px;font-weight:600;}" +
+      ".wa-status-total-amt{font-size:15px;font-weight:800;color:#222;}" +
       "@media (max-width:600px){" +
       // Full-screen chat on mobile: edge-to-edge, no rounded corners, uses the
       // dynamic viewport height so the mobile browser's URL bar doesn't crop it.
@@ -220,6 +343,40 @@
 
   // ---- UID refs ---------------------------------------------------------
   var ui = {};
+
+  // The cart view currently rendered on screen (set by showCart). The
+  // availability poller uses this to refresh the visible cart in place after
+  // reconciling sold-out items. { card, rerender } or null.
+  var activeCart = null;
+
+  // Menu rows currently on screen, so any cart change (from the menu, the cart
+  // view, a sold-out reconcile, etc.) can flip their Add/Added state in sync.
+  // Each entry is { row: <DOM node>, render: fn }. The list is pruned of rows
+  // that have left the DOM on every refresh, so it stays small and cheap — no
+  // selector scans, no full re-render of the menu.
+  var menuRows = [];
+
+  function refreshMenuRows() {
+    if (!menuRows.length) return;
+    var live = [];
+    for (var i = 0; i < menuRows.length; i++) {
+      var entry = menuRows[i];
+      if (entry.row && entry.row.isConnected) {
+        entry.render();
+        live.push(entry);
+      }
+    }
+    menuRows = live;
+  }
+
+  // Availability polling state. _availTimer is the scheduled next poll;
+  // _availInFlight prevents overlapping requests; _availFailStreak backs off
+  // after repeated failures so a flaky network doesn't hammer the server.
+  var _availTimer = null;
+  var _availInFlight = false;
+  var _availFailStreak = 0;
+  var AVAIL_POLL_MS = 15000; // base cadence while idle on an open cart
+  var AVAIL_POLL_MAX_MS = 120000; // cap when backing off after failures
 
   function addMessage(text, who, node) {
     var bubble = el("div", { class: "wa-bubble" });
@@ -241,7 +398,9 @@
         order_type: state.orderType || "dine_in",
         table_number: takeaway ? "" : label,
         customer_name: takeaway ? label : "",
-        restaurant: CONFIG.restaurant,
+        // Legacy slug path only (demo/admin pages). Token flows never call
+        // /session — they resolve a session from the opaque token instead.
+        restaurant: LEGACY_SLUG || "demo",
       }),
     })
       .then(function (r) {
@@ -263,18 +422,227 @@
       });
   }
 
+  // Resolve the opaque QR token (?r=<token>) into a customer-safe session.
+  // The server maps token -> (tenant, table) internally; we only ever receive
+  // display name, table number, zone and cart. On a same-device rescan the
+  // server may `continue` an existing session (keeping the cart).
+  var _qrResolving = null;
+  function resolveQrToken() {
+    // Coalesce concurrent calls (boot + panel-open) into one request.
+    if (_qrResolving) return _qrResolving;
+    _qrResolving = fetch(api("/qr/resolve"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: CONFIG.qrToken, device_id: DEVICE_ID }),
+    })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().then(
+            function (e) {
+              throw new Error((e && e.detail) || "invalid code");
+            },
+            function () {
+              throw new Error("invalid code");
+            }
+          );
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        state.token = data.session_id;
+        state.tableNumber = data.table_number || "-";
+        state.orderType = data.order_type || "dine_in";
+        state.zone = data.zone || null;
+        // Continue the device's cart when the server reused a live session.
+        state.cart = Array.isArray(data.cart) ? data.cart : [];
+        applyRestaurantName(data.restaurant_name || CONFIG.title);
+        saveSession();
+
+        // The table is known from the token, so skip the dine-in/table prompt
+        // and go straight to chat. Only (re)render if the panel is built.
+        if (ui.panel) {
+          renderChat(); // fresh, enabled input (replaces any loading state)
+          ui.body.innerHTML = "";
+          var where = state.tableNumber && state.tableNumber !== "-"
+            ? " at table " + state.tableNumber
+            : "";
+          addMessage(
+            (data.continued ? "Welcome back" : "Welcome") + " to " +
+              CONFIG.title + "!" + (where ? " You're" + where + "." : "") +
+              " Ask about the menu, place an order, or request the bill.",
+            "bot"
+          );
+          renderQuickChips();
+        }
+        updateCartBadge();
+        // A continued session may already have orders placed before this load;
+        // resume tracking so their live status (incl. Served) keeps updating.
+        resumeStatusPollingIfNeeded();
+        _qrResolving = null;
+        return data;
+      })
+      .catch(function (err) {
+        // Invalid / revoked / expired token. Make the panel show a clear,
+        // tenant-agnostic error. Never reveal anything about the tenant.
+        state.token = null;
+        if (ui.panel && ui.body) {
+          ui.footer.innerHTML = "";
+          ui.body.innerHTML = "";
+          addMessage(
+            "This code isn't valid anymore. Please scan the QR code on your " +
+              "table again.",
+            "bot"
+          );
+        }
+        _qrResolving = null;
+        throw err;
+      });
+    return _qrResolving;
+  }
+
+  // Re-resolve from the stored token after a session expires (HTTP 440). Used
+  // by API callers to transparently get a fresh session without losing the
+  // guest's place. Returns a promise resolving to the new signed token.
+  function reauthFromToken() {
+    if (!IS_TOKEN || !CONFIG.qrToken) return Promise.reject(new Error("no token"));
+    // Force a fresh resolve (bypass the in-flight coalescer's cached result).
+    _qrResolving = null;
+    return resolveQrToken().then(function () {
+      return state.token;
+    });
+  }
+
+  // POST JSON to a session-bound endpoint with transparent re-auth. If the
+  // server replies 440 (session expired), we re-resolve from the durable QR
+  // token, patch the new session id into the body, and retry once. Any other
+  // non-2xx is surfaced as an Error carrying the server's detail message.
+  // `bodyFn` returns the request body fresh each attempt so the retry picks up
+  // the refreshed session id. Falls back to a plain error when there's no token
+  // to re-auth with (legacy slug flow).
+  function postJson(path, bodyFn, _retried) {
+    return fetch(api(path), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Device pinning: the server binds the session to this id + the
+        // browser's User-Agent and rejects mismatches as replay attempts.
+        "X-Device-Id": DEVICE_ID,
+      },
+      body: JSON.stringify(bodyFn()),
+    }).then(function (r) {
+      if (r.status === 440 && IS_TOKEN && !_retried) {
+        // Session expired: silently mint a new one and retry once.
+        return reauthFromToken().then(function () {
+          return postJson(path, bodyFn, true);
+        });
+      }
+      if (r.status === 403) {
+        // Device/UA pinning rejected this session (likely a replayed token).
+        handlePinningRejection();
+        throw new Error("session rejected");
+      }
+      if (!r.ok) {
+        return r.json().then(
+          function (e) {
+            throw new Error((e && e.detail) || "request failed");
+          },
+          function () {
+            throw new Error("request failed");
+          }
+        );
+      }
+      return r.json();
+    });
+  }
+
+  // GET a session-bound endpoint with the same transparent re-auth as
+  // postJson: on 440 we re-resolve from the durable QR token and retry once.
+  // `urlFn` returns the path fresh each attempt so the retry uses the new
+  // session id.
+  function getJson(urlFn, _retried) {
+    return fetch(api(urlFn()), {
+      headers: { "X-Device-Id": DEVICE_ID },
+    }).then(function (r) {
+      if (r.status === 440 && IS_TOKEN && !_retried) {
+        return reauthFromToken().then(function () {
+          return getJson(urlFn, true);
+        });
+      }
+      if (r.status === 403) {
+        handlePinningRejection();
+        throw new Error("session rejected");
+      }
+      if (!r.ok) {
+        return r.json().then(
+          function (e) {
+            throw new Error((e && e.detail) || "request failed");
+          },
+          function () {
+            throw new Error("request failed");
+          }
+        );
+      }
+      return r.json();
+    });
+  }
+
   function fetchMenu() {
-    return fetch(
-      api("/menu?restaurant=" + encodeURIComponent(CONFIG.restaurant))
-    ).then(function (r) {
+    // Tenant scoping for the menu:
+    //   - Token flow: the server derives the tenant (and zone) from the
+    //     session, so we pass ONLY session_id — the slug never leaves the
+    //     server. No menu is fetched before a session exists.
+    //   - Legacy slug flow: pass the slug (demo/admin pages only).
+    var url;
+    if (LEGACY_SLUG) {
+      url = "/menu?restaurant=" + encodeURIComponent(LEGACY_SLUG);
+      if (state.token) url += "&session_id=" + encodeURIComponent(state.token);
+    } else {
+      if (!state.token) {
+        // Token flow with no session yet: nothing to scope to.
+        return Promise.resolve({ items: [], categories: {} });
+      }
+      url = "/menu?session_id=" + encodeURIComponent(state.token);
+    }
+    return fetch(api(url)).then(function (r) {
       if (!r.ok) throw new Error("no menu");
       return r.json();
     }).then(function (data) {
       // Cache items so natural-language ordering can match dish names without
       // an extra round trip.
       if (data && data.items) state.menu = data.items;
+      // The menu carries the restaurant's real display name (e.g. "Demo 2"),
+      // which we can't derive from the slug ("demov2"). Apply it so the header
+      // and messages show the proper name even before a session starts.
+      if (data && data.restaurant_name) applyRestaurantName(data.restaurant_name);
       return data;
     });
+  }
+
+  // Set the restaurant's display name everywhere it's shown (config + header),
+  // but only when it actually differs, to avoid needless DOM churn. If the
+  // pre-session welcome prompt is currently on screen, re-render it so it
+  // picks up the corrected name instead of the slug-derived placeholder.
+  function applyRestaurantName(name) {
+    name = String(name || "").trim();
+    if (!name || name === CONFIG.title) return;
+    CONFIG.title = name;
+    if (ui.titleEl && ui.titleEl.firstChild) {
+      ui.titleEl.firstChild.textContent = name;
+    }
+    // Only the legacy pre-session prompt bakes the name into its text; re-render
+    // it so "Welcome to <slug>" becomes "Welcome to <real name>". Never do this
+    // for the token flow (it has no table prompt and resolve owns the UI).
+    if (!IS_TOKEN && state.open && !state.token && ui.body) {
+      renderTablePrompt();
+    }
+  }
+
+  // Cheap, non-blocking lookup of the restaurant's display name via /menu.
+  // Never throws: a missing menu just leaves the slug-derived title in place.
+  function prefetchRestaurantName() {
+    try {
+      fetchMenu().catch(function () {});
+    } catch (e) {}
   }
 
   // Ensure the menu is cached (fetch once if we haven't yet).
@@ -286,45 +654,27 @@
   }
 
   function askQuestion(question) {
-    return fetch(api("/ask"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: state.token, question: question }),
-    }).then(function (r) {
-      if (!r.ok) throw new Error("ask failed");
-      return r.json();
+    return postJson("/ask", function () {
+      return { session_id: state.token, question: question };
     });
   }
 
   // Server-side NL order parsing (gated LLM fallback). No secrets here — the
   // OpenAI key lives only on the server; we just send the guest's text.
   function parseOrderServer(text) {
-    return fetch(api("/order/parse"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: state.token, text: text }),
-    }).then(function (r) {
-      if (!r.ok) throw new Error("parse failed");
-      return r.json();
+    return postJson("/order/parse", function () {
+      return { session_id: state.token, text: text };
     });
   }
 
   function fetchPlaceOrder(orderType) {
-    return fetch(api("/order"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    return postJson("/order", function () {
+      return {
         session_id: state.token,
         cart: state.cart,
         order_type: orderType || "dine_in",
         payment_status: "paid_unverified",
-      }),
-    }).then(function (r) {
-      if (!r.ok)
-        return r.json().then(function (e) {
-          throw new Error(e.detail || "order failed");
-        });
-      return r.json();
+      };
     });
   }
 
@@ -336,6 +686,11 @@
     // Returned so the triggering button stays disabled until this resolves.
     return fetchPlaceOrder(orderType)
       .then(function (o) {
+        // Stop tracking the pre-order bill BEFORE clearing the cart so the
+        // empty-cart refresh doesn't turn the placed bill into an "empty"
+        // message. The order confirmation card replaces it.
+        state.billNode = null;
+        state.billPayBtn = null;
         clearCart();
         var isTakeaway = o.order_type === "takeaway";
         var card = el("div", { class: "wa-order-card" }, [
@@ -353,10 +708,176 @@
         ]);
         addMessage("✅ Order placed!", "bot");
         addMessage(null, "bot", card);
+        // Begin showing this session's live order statuses to the customer.
+        startStatusPolling();
       })
       .catch(function (e) {
         addMessage("Couldn't place the order: " + e.message, "bot");
       });
+  }
+
+  // ---- Customer order-status tracking -----------------------------------
+  // The customer sees ONLY their own session's orders (server-enforced via the
+  // session token). Statuses flow Paid -> Preparing -> Served. Once the server
+  // reports the session ended (all orders served), we stop polling.
+  var STATUS_POLL_MS = 6000;
+  var STATUS_STEPS = ["Paid", "Preparing", "Served"];
+
+  function statusClass(s) {
+    return "wa-st-" + String(s || "").toLowerCase();
+  }
+
+  function renderStatus(data) {
+    var orders = (data && data.orders) || [];
+    if (!orders.length) return;
+
+    var card = el("div", { class: "wa-status-card" }, [
+      el("div", { class: "wa-status-title" }, [
+        el("span", {}, ["Your orders"]),
+        el("span", { class: "wa-status-live" }, [
+          el("span", { class: "wa-live-dot" }, []),
+          "Live",
+        ]),
+      ]),
+    ]);
+
+    orders.forEach(function (o) {
+      var isCancelled = o.status === "Cancelled";
+      var reached = STATUS_STEPS.indexOf(o.status);
+
+      var head = el("div", { class: "wa-status-head" }, [
+        el("span", { class: "wa-status-no" }, ["Order " + o.order_no]),
+        el("span", { class: "wa-status-badge " + statusClass(o.status) }, [o.status]),
+      ]);
+
+      var row = el("div", { class: "wa-status-row" }, [head]);
+
+      if (!isCancelled) {
+        // Connected Paid -> Preparing -> Served tracker. The fill width is
+        // derived from how far the order has advanced; each node shows a tick
+        // once reached and the active node is highlighted.
+        var pct = reached <= 0 ? 0 : (reached / (STATUS_STEPS.length - 1)) * 100;
+        var track = el("div", { class: "wa-track" }, [
+          el("div", { class: "wa-track-line" }, [
+            el("div", {
+              class: "wa-track-fill",
+              style: "width:" + pct + "%",
+            }, []),
+          ]),
+          el(
+            "div",
+            { class: "wa-track-nodes" },
+            STATUS_STEPS.map(function (label, i) {
+              var cls = "wa-node";
+              if (i < reached) cls += " done";
+              else if (i === reached) cls += " active";
+              return el("div", { class: cls }, [
+                el("span", { class: "wa-node-dot" }, [
+                  i < reached ? "✓" : String(i + 1),
+                ]),
+                el("span", { class: "wa-node-label" }, [label]),
+              ]);
+            })
+          ),
+        ]);
+        row.appendChild(track);
+      } else {
+        row.appendChild(
+          el("div", { class: "wa-status-cancel-note" }, [
+            "This order was cancelled.",
+          ])
+        );
+      }
+
+      row.appendChild(
+        el("div", { class: "wa-status-total" }, [
+          el("span", { class: "wa-status-total-label" }, ["Total"]),
+          el("span", { class: "wa-status-total-amt" }, [money(o.total)]),
+        ])
+      );
+      card.appendChild(row);
+    });
+
+    // Replace the previous status card in place so the transcript doesn't fill
+    // up with one card per poll.
+    if (state.statusNode && state.statusNode.parentNode) {
+      state.statusNode.parentNode.replaceChild(card, state.statusNode);
+      state.statusNode = card;
+    } else {
+      addMessage(null, "bot", card);
+      state.statusNode = card;
+    }
+  }
+
+  function pollStatusOnce() {
+    if (!state.token) return Promise.resolve();
+    return getJson(function () {
+      return "/my-orders?session_id=" + encodeURIComponent(state.token);
+    })
+      .then(function (data) {
+        renderStatus(data);
+        if (data && data.session_ended) {
+          stopStatusPolling();
+          // The session is over (all orders served). Wipe every trace of it
+          // from this device so a reorder/rescan starts completely fresh and
+          // can never inherit the previous cart or dead session token.
+          endLocalSession();
+          addMessage(
+            "All your orders have been served. Thanks for dining with us! " +
+              "Scan the QR again to start a new order.",
+            "bot"
+          );
+        }
+      })
+      .catch(function () {
+        // Transient error — keep polling; the next tick may succeed.
+      });
+  }
+
+  function startStatusPolling() {
+    if (state.statusTimer) return; // already polling
+    pollStatusOnce();
+    state.statusTimer = setInterval(pollStatusOnce, STATUS_POLL_MS);
+  }
+
+  function stopStatusPolling() {
+    if (state.statusTimer) {
+      clearInterval(state.statusTimer);
+      state.statusTimer = null;
+    }
+  }
+
+  // Resume live status tracking whenever we have a session but aren't already
+  // polling. This matters after a page reload (boot restores the token but the
+  // transcript — and the old poll timer — are gone) and after the token flow
+  // resolves/continues a session that may already have in-flight orders. The
+  // first poll re-creates the "Your orders" card, so a status change made by
+  // the kitchen while the customer was away (e.g. Preparing -> Served) shows
+  // up instead of the card staying frozen on its last value.
+  function resumeStatusPollingIfNeeded() {
+    if (!state.token) return;
+    if (state.statusTimer) return;
+    startStatusPolling();
+  }
+
+  // The server rejected this session for a device/UA mismatch (replay
+  // defense). Drop the local session and ask the guest to rescan. We do NOT
+  // auto-reauth here: a mismatch means this client isn't the one the token was
+  // bound to, so silently minting a new session would defeat the protection.
+  var _pinningHandled = false;
+  function handlePinningRejection() {
+    if (_pinningHandled) return; // avoid duplicate messages on parallel calls
+    _pinningHandled = true;
+    stopStatusPolling();
+    state.token = null;
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch (e) {}
+    addMessage(
+      "For your security, this session can't be continued on this device. " +
+        "Please scan your table's QR code again to start a new order.",
+      "bot"
+    );
   }
 
   // Ask dine-in vs takeaway, then place.
@@ -370,31 +891,14 @@
   }
 
   function fetchPay() {
-    return fetch(api("/pay"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: state.token, cart: state.cart }),
-    }).then(function (r) {
-      if (!r.ok)
-        return r.json().then(function (e) {
-          throw new Error(e.detail || "pay failed");
-        });
-      return r.json();
+    return postJson("/pay", function () {
+      return { session_id: state.token, cart: state.cart };
     });
   }
 
   function fetchBill() {
-    return fetch(api("/bill"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: state.token,
-        cart: state.cart,
-        format: "json",
-      }),
-    }).then(function (r) {
-      if (!r.ok) return r.json().then(function (e) { throw new Error(e.detail || "bill failed"); });
-      return r.json();
+    return postJson("/bill", function () {
+      return { session_id: state.token, cart: state.cart, format: "json" };
     });
   }
 
@@ -409,6 +913,7 @@
         name: item.name,
         price: item.price || 0,
         quantity: 1,
+        instructions: "",
       });
     saveSession();
     updateCartBadge();
@@ -421,11 +926,44 @@
   }
 
   function updateCartBadge() {
-    if (!ui.badge) return;
-    var c = cartCount();
-    ui.badge.textContent = c;
-    ui.badge.style.display = c > 0 ? "inline-block" : "none";
+    if (ui.badge) {
+      var c = cartCount();
+      ui.badge.textContent = c;
+      ui.badge.style.display = c > 0 ? "inline-block" : "none";
+    }
+    // Every cart mutation flows through here, so it's the natural place to
+    // start polling when the cart becomes non-empty and stop it when it
+    // empties. refreshPolling is defined later in the module; guard in case
+    // this runs during very early init.
+    if (typeof refreshPolling === "function") refreshPolling();
+    // Likewise, keep any visible bill in sync with the cart so the guest never
+    // has to re-type "bill" after adding/removing an item.
+    if (typeof refreshBillIfShown === "function") refreshBillIfShown();
+    // And flip any on-screen menu rows between Add / Added + ✕ so the menu,
+    // cart and badge never disagree about what's in the order.
+    if (typeof refreshMenuRows === "function") refreshMenuRows();
+    // Keep the on-screen "Your order" card live when items are added/removed
+    // from elsewhere (e.g. the menu). The card's own rerender() calls back into
+    // updateCartBadge, so _syncingCart guards against infinite recursion.
+    if (
+      !_syncingCart &&
+      activeCart &&
+      activeCart.card &&
+      activeCart.card.parentNode &&
+      typeof activeCart.rerender === "function"
+    ) {
+      _syncingCart = true;
+      try {
+        activeCart.rerender();
+      } finally {
+        _syncingCart = false;
+      }
+    } else if (activeCart && activeCart.card && !activeCart.card.parentNode) {
+      // The cart view has left the transcript; drop the stale handle.
+      activeCart = null;
+    }
   }
+  var _syncingCart = false;
 
   function findCartItem(name) {
     return state.cart.filter(function (c) {
@@ -460,34 +998,269 @@
     updateCartBadge();
   }
 
+  // Fully reset this device's local session state. Used when the server says
+  // the session ended (all orders served): we drop the cart, the dead session
+  // token, and the cached sessionStorage blob so the next load/rescan mints a
+  // brand-new session and can never show the previous order's items.
+  function endLocalSession() {
+    state.token = null;
+    state.cart = [];
+    state.customerName = null;
+    state.pendingOrder = null;
+    state.statusNode = null;
+    state.billNode = null;
+    state.billPayBtn = null;
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch (e) {}
+    updateCartBadge();
+  }
+
   function cartTotal() {
     return state.cart.reduce(function (n, c) {
       return n + (Number(c.price) || 0) * c.quantity;
     }, 0);
   }
 
+  // Reconcile the local cart with the server's `dropped` list. An item can go
+  // sold out (or be pulled from the menu) after it was added to the cart; the
+  // server refuses to bill it, so we remove it locally too — otherwise the
+  // cart would show a higher subtotal than the real bill/pay total. Whenever
+  // something is dropped we tell the guest exactly what and why. Returns true
+  // if anything was dropped.
+  function reconcileDropped(dropped) {
+    if (!dropped || !dropped.length) return false;
+    var droppedSet = {};
+    dropped.forEach(function (n) {
+      droppedSet[String(n).toLowerCase()] = true;
+    });
+    state.cart = state.cart.filter(function (c) {
+      return !droppedSet[String(c.name).toLowerCase()];
+    });
+    saveSession();
+    updateCartBadge();
+    addMessage(
+      "Sorry, these items just sold out and were removed from your order: " +
+        dropped.join(", ") +
+        ".",
+      "bot"
+    );
+    return true;
+  }
+
+  // ---- Live availability sync -------------------------------------------
+  // Re-check the cart against the current menu so a dish that sells out (or is
+  // pulled from the menu, or re-priced) while the guest is idle is caught and
+  // the guest is told — without them having to tap Bill/Pay. The server stays
+  // the source of truth: /bill and /pay still re-price, this is just a faster,
+  // friendlier heads-up. Returns a promise that resolves to true if the cart
+  // changed.
+  function syncAvailability() {
+    // Nothing to reconcile without a session or an empty cart.
+    if (!state.token || !state.cart.length) return Promise.resolve(false);
+    if (_availInFlight) return Promise.resolve(false);
+    _availInFlight = true;
+
+    return fetchMenu()
+      .then(function (data) {
+        _availFailStreak = 0;
+        var items = (data && data.items) || [];
+        // Index the fresh menu by lowercased name for quick lookup.
+        var byName = {};
+        items.forEach(function (it) {
+          byName[String(it.name).toLowerCase()] = it;
+        });
+
+        var dropped = [];
+        var repriced = []; // {name, from, to}
+        state.cart.forEach(function (ci) {
+          var fresh = byName[String(ci.name).toLowerCase()];
+          // Gone from the menu entirely, or explicitly sold out -> drop it.
+          if (!fresh || fresh.available === false) {
+            dropped.push(ci.name);
+            return;
+          }
+          // Price drifted (e.g. manager edited it). Correct the cart line so
+          // the displayed subtotal matches what the bill will actually charge.
+          if (
+            fresh.price != null &&
+            Math.abs(Number(fresh.price) - Number(ci.price)) > 0.001
+          ) {
+            repriced.push({ name: ci.name, from: Number(ci.price), to: Number(fresh.price) });
+            ci.price = Number(fresh.price);
+          }
+        });
+
+        var changed = false;
+
+        if (dropped.length) {
+          // reconcileDropped removes the items, saves, updates the badge and
+          // messages the guest with the exact names.
+          reconcileDropped(dropped);
+          changed = true;
+        }
+
+        if (repriced.length) {
+          saveSession();
+          var msg = repriced
+            .map(function (r) {
+              return r.name + " is now " + money(r.to) + " (was " + money(r.from) + ")";
+            })
+            .join("; ");
+          addMessage("Heads up — a price changed: " + msg + ".", "bot");
+          changed = true;
+        }
+
+        if (changed) refreshVisibleCart();
+        return changed;
+      })
+      .catch(function () {
+        // Network/menu error: never disturb the guest, just back off a bit.
+        _availFailStreak += 1;
+        return false;
+      })
+      .then(function (result) {
+        _availInFlight = false;
+        return result;
+      });
+  }
+
+  // Re-render the cart card if it's still the one on screen. If the cart went
+  // empty, tell the guest once.
+  function refreshVisibleCart() {
+    if (!activeCart) return;
+    // If the card was detached (guest navigated to another view) drop the ref.
+    if (!activeCart.card || !activeCart.card.isConnected) {
+      activeCart = null;
+      return;
+    }
+    if (!state.cart.length) {
+      activeCart.rerender(); // shows the "Order is now empty" state
+      addMessage("Your cart is now empty. Browse the menu to add items.", "bot");
+      activeCart = null;
+      return;
+    }
+    activeCart.rerender();
+  }
+
+  // ---- Availability polling lifecycle -----------------------------------
+  // Poll only while it's useful: panel open, a session exists, and the cart is
+  // non-empty. Each tick reschedules itself (no setInterval, so a slow request
+  // can never overlap the next tick). Backoff grows the gap after failures.
+  function nextPollDelay() {
+    var base = AVAIL_POLL_MS * Math.pow(2, Math.min(_availFailStreak, 3));
+    var capped = Math.min(base, AVAIL_POLL_MAX_MS);
+    // Jitter ±15% so many open tabs don't sync in lockstep.
+    var jitter = capped * 0.15 * (Math.random() * 2 - 1);
+    return Math.round(capped + jitter);
+  }
+
+  function shouldPoll() {
+    return !!(state.open && state.token && state.cart.length);
+  }
+
+  function scheduleAvailabilityPoll() {
+    clearTimeout(_availTimer);
+    if (!shouldPoll()) return;
+    _availTimer = setTimeout(function () {
+      // Don't poll a backgrounded tab; we sync on visibility/focus instead.
+      var hidden = typeof document !== "undefined" && document.hidden;
+      var run = hidden ? Promise.resolve(false) : syncAvailability();
+      run.then(function () {
+        scheduleAvailabilityPoll(); // reschedule regardless of outcome
+      });
+    }, nextPollDelay());
+  }
+
+  // Call after anything that changes open-state or the cart, to start or stop
+  // polling as appropriate.
+  function refreshPolling() {
+    if (shouldPoll()) scheduleAvailabilityPoll();
+    else clearTimeout(_availTimer);
+  }
+
+  // An immediate, foreground-triggered sync: when the guest returns to the tab
+  // or refocuses the window, re-check right away (sold-out may have happened
+  // while they were away) then resume the normal cadence.
+  function syncNowIfVisible() {
+    if (!shouldPoll()) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    syncAvailability().then(function () {
+      scheduleAvailabilityPoll();
+    });
+  }
+
   // ---- Flows ------------------------------------------------------------
   function menuItemRow(item) {
+    // A dish flagged unavailable is shown greyed as "Sold out" and can't be
+    // added. available is only ever false when explicitly set by the server.
+    var soldOut = item.available === false;
     var info = el("div", { class: "wa-mi-info" }, [
       el("div", { class: "wa-mi-name" }, [
-        item.name + (item.price != null ? "  " + money(item.price) : ""),
+        item.name +
+          (item.price != null ? "  " + money(item.price) : "") +
+          (soldOut ? "  · Sold out" : ""),
       ]),
       item.description
         ? el("div", { class: "wa-mi-desc" }, [item.description])
         : null,
     ]);
-    var btn = el(
-      "button",
-      {
-        class: "wa-add",
-        onclick: function () {
-          addToCart(item);
-          addMessage("Added " + item.name + " to your order.", "bot");
-        },
-      },
-      ["Add"]
-    );
-    return el("div", { class: "wa-menu-item" }, [info, btn]);
+    // Action area: a plain "Add" button until the dish is in the cart, then a
+    // disabled "Added" button alongside a "×" control to remove it. Re-rendered
+    // in place on each click so it always mirrors the cart.
+    var action = el("div", { class: "wa-mi-action" }, []);
+
+    function renderAction() {
+      action.innerHTML = "";
+      if (soldOut) {
+        action.appendChild(
+          el("button", { class: "wa-add", disabled: "disabled" }, ["Sold out"])
+        );
+        return;
+      }
+      var inCart = !!findCartItem(item.name);
+      if (inCart) {
+        action.appendChild(
+          el("button", { class: "wa-add", disabled: "disabled" }, ["Added"])
+        );
+        action.appendChild(
+          el(
+            "button",
+            {
+              class: "wa-remove wa-mi-remove",
+              title: "Remove from order",
+              "aria-label": "Remove " + item.name + " from order",
+              // removeItem -> updateCartBadge -> refreshMenuRows keeps every
+              // visible row (including this one) in sync; no manual call needed.
+              onclick: function () {
+                removeItem(item.name);
+              },
+            },
+            ["✕"]
+          )
+        );
+      } else {
+        action.appendChild(
+          el(
+            "button",
+            {
+              class: "wa-add",
+              onclick: function () {
+                addToCart(item);
+              },
+            },
+            ["Add"]
+          )
+        );
+      }
+    }
+    renderAction();
+
+    var row = el("div", { class: "wa-menu-item" }, [info, action]);
+    if (soldOut) row.style.opacity = "0.5";
+    // Track this row so cart changes made anywhere flip its Add/Added state.
+    menuRows.push({ row: row, render: renderAction });
+    return row;
   }
 
   function showMenu() {
@@ -625,12 +1398,31 @@
 
       state.cart.forEach(function (ci) {
         var name = ci.name;
+        // Per-item free-text note (e.g. "no onions"). Stored on the cart line
+        // and sent with the order so the kitchen and manager can see it.
+        // Per-item free-text note as a textarea. We attach the input handler
+        // with addEventListener directly (NOT via el's on* attribute) because
+        // el wraps on* handlers in _guard, which disables the field for 600ms
+        // after each event — on a text field that drops focus mid-typing.
+        var note = el("textarea", {
+          class: "wa-input wa-item-note",
+          rows: "2",
+          maxlength: "200",
+          placeholder: "Add a note (e.g. no onions)",
+          "aria-label": "Instructions for " + name,
+        });
+        note.value = ci.instructions || "";
+        note.addEventListener("input", function (e) {
+          ci.instructions = e.target.value;
+          saveSession();
+        });
         var line = el("div", { class: "wa-cart-row" }, [
           el("div", { class: "wa-cart-info" }, [
             el("div", { class: "wa-mi-name" }, [name]),
             el("div", { class: "wa-mi-desc" }, [
               money(ci.price) + " each · " + money(ci.price * ci.quantity),
             ]),
+            note,
           ]),
           el("div", { class: "wa-qty" }, [
             el(
@@ -714,6 +1506,11 @@
     rerender();
     addMessage("Here's your current order. Tap +/− to adjust or 🗑 to remove:", "bot");
     addMessage(null, "bot", card);
+    // Expose this cart view so the availability poller can refresh it in place
+    // when an item sells out while the guest is just looking at the cart. We
+    // keep the card node too, so we can tell whether this view is still the
+    // one on screen (a newer showCart would replace the handle).
+    activeCart = { card: card, rerender: rerender };
   }
 
   // Lazily load a QR library (used only when the guest wants to pay).
@@ -744,6 +1541,22 @@
     }
     fetchPay()
       .then(function (pay) {
+        // If an item sold out between adding it and paying, the server already
+        // excluded it from `pay.amount`. Reconcile the local cart and tell the
+        // guest so the amount they're about to pay makes sense.
+        if (reconcileDropped(pay.dropped)) {
+          if (!state.cart.length) {
+            addMessage(
+              "Your cart is now empty, so there's nothing to pay for. " +
+                "Please add some items.",
+              "bot"
+            );
+            return;
+          }
+          // Re-fetch so the QR/amount reflect the reconciled cart exactly.
+          showPayment();
+          return;
+        }
         if (!pay.configured || !pay.upi_uri) {
           // No UPI set up — still let the guest place the order (demo/testing).
           var fb = el("div", { class: "wa-pay-card" }, [
@@ -827,6 +1640,38 @@
       });
   }
 
+  // Build the inner HTML of a bill card from a server bill payload.
+  function billHtml(bill) {
+    var rows = bill.line_items
+      .map(function (li) {
+        return (
+          "<tr><td>" +
+          li.quantity +
+          "× " +
+          li.name +
+          "</td><td class='r'>" +
+          money(li.line_total) +
+          "</td></tr>"
+        );
+      })
+      .join("");
+    return (
+      "<div class='wa-bill'><table>" +
+      rows +
+      "<tr><td>Subtotal</td><td class='r'>" +
+      money(bill.subtotal) +
+      "</td></tr>" +
+      "<tr><td>Tax (" +
+      Math.round(bill.tax_rate * 100) +
+      "%)</td><td class='r'>" +
+      money(bill.tax) +
+      "</td></tr>" +
+      "<tr class='tot'><td>Total</td><td class='r'>" +
+      money(bill.total) +
+      "</td></tr></table></div>"
+    );
+  }
+
   function showBill() {
     if (!state.cart.length) {
       addMessage("Your cart is empty. Add some items first.", "bot");
@@ -834,36 +1679,19 @@
     }
     fetchBill()
       .then(function (bill) {
-        var rows = bill.line_items
-          .map(function (li) {
-            return (
-              "<tr><td>" +
-              li.quantity +
-              "× " +
-              li.name +
-              "</td><td class='r'>" +
-              money(li.line_total) +
-              "</td></tr>"
-            );
-          })
-          .join("");
-        var html =
-          "<div class='wa-bill'><table>" +
-          rows +
-          "<tr><td>Subtotal</td><td class='r'>" +
-          money(bill.subtotal) +
-          "</td></tr>" +
-          "<tr><td>Tax (" +
-          Math.round(bill.tax_rate * 100) +
-          "%)</td><td class='r'>" +
-          money(bill.tax) +
-          "</td></tr>" +
-          "<tr class='tot'><td>Total</td><td class='r'>" +
-          money(bill.total) +
-          "</td></tr></table></div>";
-        var node = el("div", { html: html });
+        // Reconcile the local cart with what the server actually billed and
+        // tell the guest about anything that went sold out. If the cart is now
+        // empty, stop here (the helper already messaged the guest).
+        if (reconcileDropped(bill.dropped) && !bill.line_items.length) {
+          addMessage("Your cart is now empty. Please add some items.", "bot");
+          return;
+        }
+        var node = el("div", { html: billHtml(bill) });
         addMessage("Here's your bill for table " + bill.table_number + ":", "bot");
         addMessage(null, "bot", node);
+        // Track this card so later cart changes refresh it in place instead of
+        // forcing the guest to type "bill" again.
+        state.billNode = node;
 
         var payBtn = el(
           "button",
@@ -877,10 +1705,81 @@
           ["💳 Pay now " + money(bill.total)]
         );
         addMessage(null, "bot", payBtn);
+        state.billPayBtn = payBtn;
       })
       .catch(function (e) {
         addMessage("Couldn't generate the bill: " + e.message, "bot");
       });
+  }
+
+  // Keep a visible bill in sync with the cart. Called after every cart change
+  // so adding/removing items updates the already-shown bill automatically —
+  // the guest never has to re-type "bill". Does nothing if no bill is showing.
+  var _billRefreshing = false;
+  function refreshBillIfShown() {
+    // Only when a bill card is on screen and still attached to the transcript.
+    if (!state.billNode || !state.billNode.parentNode) {
+      state.billNode = null;
+      state.billPayBtn = null;
+      return;
+    }
+    if (!state.token) return;
+    if (!state.cart.length) {
+      // Cart emptied: collapse the stale bill so it can't be paid.
+      state.billNode.innerHTML =
+        "<div class='wa-mi-desc'>Your cart is empty — add items to see an " +
+        "updated bill.</div>";
+      if (state.billPayBtn) state.billPayBtn.style.display = "none";
+      return;
+    }
+    if (_billRefreshing) return; // coalesce rapid taps
+    _billRefreshing = true;
+    // Let the guest know the bill is recalculating so a brief pause doesn't
+    // look like nothing happened. The spinner overlays the bill without
+    // discarding it, so the old totals stay visible until the new ones land.
+    showBillUpdating();
+    fetchBill()
+      .then(function (bill) {
+        _billRefreshing = false;
+        if (!state.billNode) return;
+        reconcileDropped(bill.dropped);
+        state.billNode.innerHTML = billHtml(bill);
+        if (state.billPayBtn) {
+          state.billPayBtn.style.display = "";
+          // Update the amount on the existing Pay button.
+          while (state.billPayBtn.firstChild) {
+            state.billPayBtn.removeChild(state.billPayBtn.firstChild);
+          }
+          state.billPayBtn.appendChild(
+            document.createTextNode("💳 Pay now " + money(bill.total))
+          );
+        }
+      })
+      .catch(function () {
+        _billRefreshing = false; // leave the last-good bill on a transient error
+        hideBillUpdating();
+      });
+  }
+
+  // A lightweight "please wait" overlay on the live bill card while it refetches.
+  // We overlay rather than replace so the previous totals stay readable; the
+  // overlay is removed automatically when billHtml() rewrites the card, but we
+  // also clear it explicitly on error.
+  function showBillUpdating() {
+    if (!state.billNode) return;
+    if (state.billNode.querySelector(".wa-bill-updating")) return;
+    state.billNode.style.position = "relative";
+    var overlay = el("div", { class: "wa-bill-updating" }, [
+      el("span", { class: "wa-spinner" }, []),
+      el("span", {}, ["Updating your bill…"]),
+    ]);
+    state.billNode.appendChild(overlay);
+  }
+
+  function hideBillUpdating() {
+    if (!state.billNode) return;
+    var overlay = state.billNode.querySelector(".wa-bill-updating");
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
   }
 
   // ---- Natural-language ordering ---------------------------------------
@@ -1321,6 +2220,14 @@
           : "Welcome back to table " + state.tableNumber;
       addMessage(who + "! How can I help? (menu / bill)", "bot");
       renderQuickChips();
+    } else if (IS_TOKEN) {
+      // Token flow but resolve hasn't completed (or failed). Show a brief
+      // loading line; resolveQrToken will render chat or an error when done.
+      renderChat();
+      ui.input.disabled = true;
+      addMessage("One moment — getting your table ready…", "bot");
+      // Kick a resolve if one isn't already in flight (e.g. panel opened fast).
+      resolveQrToken().catch(function () {});
     } else {
       renderTablePrompt();
     }
@@ -1336,9 +2243,15 @@
       // Marker used by the mobile stylesheet to hide the FAB and (optionally)
       // lock background scroll while the full-screen chat is open.
       root.classList.add("wa-open");
+      // Opening the panel is a foreground event: re-check availability right
+      // away (something may have sold out while it was closed), then poll.
+      syncNowIfVisible();
+      refreshPolling();
     } else {
       if (ui.panel) ui.panel.style.display = "none";
       root.classList.remove("wa-open");
+      // Stop polling while closed.
+      refreshPolling();
     }
   }
 
@@ -1368,16 +2281,59 @@
       if (!CONFIG.apiBase && window.WAITER_CONFIG.apiBase)
         CONFIG.apiBase = window.WAITER_CONFIG.apiBase;
     }
-    // Per-tenant title: if the URL/attribute picked a real restaurant, show a
-    // name derived from its slug; otherwise fall back to the global config.
-    if (CONFIG.restaurant && CONFIG.restaurant !== "demo") {
-      CONFIG.title = titleFromSlug(CONFIG.restaurant);
+    // Title: for a token flow we don't know the name until /qr/resolve returns
+    // (and we must NOT derive anything from the slug). For the legacy slug path
+    // we can title-case the slug as a placeholder until the menu/name loads.
+    if (!IS_TOKEN && LEGACY_SLUG && LEGACY_SLUG !== "demo") {
+      CONFIG.title = titleFromSlug(LEGACY_SLUG);
     } else if (window.WAITER_CONFIG && window.WAITER_CONFIG.name) {
       CONFIG.title = window.WAITER_CONFIG.name;
     }
     injectStyles();
     loadSession();
     buildFab();
+
+    // Opaque-token flow: resolve the token to a (hidden) tenant + table and a
+    // customer-safe session before anything else. This also learns the display
+    // name. The slug is never involved on the client.
+    if (IS_TOKEN) {
+      resolveQrToken();
+    } else {
+      // Legacy slug path: learn the real display name up front via /menu.
+      prefetchRestaurantName();
+      // A reload restores the session token but not the poll timer, so pick
+      // live order tracking back up here (token flow resumes in resolveQrToken).
+      resumeStatusPollingIfNeeded();
+    }
+
+    // Re-check availability the moment the guest returns to the tab/window.
+    // A sell-out could have happened while they were away; this catches it
+    // immediately instead of waiting for the next poll tick.
+    if (typeof document !== "undefined" && document.addEventListener) {
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) {
+          syncNowIfVisible();
+          // Mobile browsers often throttle or kill background intervals, so the
+          // status poll may have stalled while the customer was away. Resume it
+          // (no-op if already running) and poll once immediately so a kitchen
+          // update like Served appears right when they look back at the chat.
+          resumeStatusPollingIfNeeded();
+          if (state.token && state.statusTimer) pollStatusOnce();
+        }
+      });
+    }
+    if (typeof window !== "undefined" && window.addEventListener) {
+      window.addEventListener("focus", function () {
+        syncNowIfVisible();
+        resumeStatusPollingIfNeeded();
+        if (state.token && state.statusTimer) pollStatusOnce();
+      });
+      // Stop timers cleanly if the page is being torn down.
+      window.addEventListener("pagehide", function () {
+        clearTimeout(_availTimer);
+        stopStatusPolling();
+      });
+    }
   }
 
   if (document.readyState === "loading") {

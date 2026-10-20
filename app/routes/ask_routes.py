@@ -1,7 +1,7 @@
 """/ask — RAG question answering grounded in the stored menu."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.routes.deps import get_db, resolve_session
@@ -12,8 +12,10 @@ router = APIRouter(prefix="/ask", tags=["ask"])
 
 
 @router.post("", response_model=AskResponse)
-async def ask(body: AskRequest, db: AsyncSession = Depends(get_db)):
-    # Validate the session (ties the request to a table).
-    row = await resolve_session(body.session_id, db)
+async def ask(
+    body: AskRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
+    # Validate the session (ties the request to a table + device/UA).
+    row = await resolve_session(body.session_id, db, request)
     result = await answer_question(db, row["restaurant_id"], body.question)
     return AskResponse(answer=result["answer"], sources=result["sources"])

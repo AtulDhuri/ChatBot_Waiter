@@ -22,9 +22,50 @@ class SessionInfo(BaseModel):
     table_number: str
     customer_name: str = ""
     order_type: str = "dine_in"
-    restaurant: str  # slug (tenant identity)
+    # Tenant slug (backend identity). Optional and only populated on the
+    # slug-based create path, where the caller already supplied the slug. The
+    # token-resolution path (GET /session/{token}) leaves this empty so the
+    # slug never leaks to a customer who only holds an opaque QR token.
+    restaurant: Optional[str] = None
     restaurant_name: str = ""  # display name (may repeat across outlets)
+    zone: Optional[str] = None  # pricing zone resolved from the table
     cart: List["CartItem"] = []
+
+
+# ---- QR tokens -----------------------------------------------------------
+
+class QrResolveRequest(BaseModel):
+    """Trade an opaque QR token (?r=...) for a session. The token is the only
+    tenant reference the customer ever holds."""
+    token: str = Field(..., min_length=1, max_length=128)
+    # Stable per-browser id (localStorage). Lets us continue this device's cart
+    # on a rescan instead of starting over.
+    device_id: str = Field(default="", max_length=128)
+
+
+class QrSession(BaseModel):
+    """Customer-safe session payload. Deliberately omits slug / tenant_id and
+    any backend identifier — only what a guest may see."""
+    session_id: str
+    table_number: str
+    restaurant_name: str = ""  # display name only
+    order_type: str = "dine_in"
+    zone: Optional[str] = None  # pricing zone label (customer-safe, affects price)
+    cart: List["CartItem"] = []
+    # True when we continued an existing device session (kept the cart) vs.
+    # started a fresh one. Purely informational for the widget.
+    continued: bool = False
+
+
+class QrTokenRequest(BaseModel):
+    """Staff-only: mint (or fetch) the durable token for a table."""
+    restaurant: str = Field(..., max_length=64)
+    table_number: str = Field(..., max_length=32)
+
+
+class QrTokenResponse(BaseModel):
+    token: str
+    table_number: str
 
 
 # ---- Cart / Menu ---------------------------------------------------------
@@ -33,6 +74,9 @@ class CartItem(BaseModel):
     name: str
     price: float = 0.0
     quantity: int = Field(default=1, ge=1)
+    # Optional free-text customer note (e.g. "no onions"). Kept as plain text
+    # today; the field can later hold a structured value without a migration.
+    instructions: str = Field(default="", max_length=200)
 
 
 class MenuItem(BaseModel):
@@ -42,10 +86,13 @@ class MenuItem(BaseModel):
     category: Optional[str] = None
     price: Optional[float] = None
     currency: str = "$"
+    available: bool = True
+    zone_prices: Dict[str, float] = Field(default_factory=dict)
 
 
 class MenuResponse(BaseModel):
-    restaurant: str
+    restaurant: str  # slug (tenant identity)
+    restaurant_name: str = ""  # display name, e.g. "Demo 2"
     categories: Dict[str, List[MenuItem]]
     items: List[MenuItem]
 
@@ -90,12 +137,16 @@ class BillRequest(BaseModel):
 
 class BillResponse(BaseModel):
     table_number: str
+    zone: Optional[str] = None
     line_items: List[Dict[str, Any]]
     subtotal: float
     tax_rate: float
     tax: float
     total: float
     currency: str
+    # Names of cart items the server refused to bill (unknown or sold out).
+    # The client uses this to reconcile its local cart and inform the guest.
+    dropped: List[str] = []
 
 
 # ---- Payment -------------------------------------------------------------
@@ -107,12 +158,17 @@ class PayRequest(BaseModel):
 
 class PayResponse(BaseModel):
     table_number: str
-    restaurant: str
+    # NOTE: the tenant slug is intentionally NOT returned here. This response
+    # goes to the customer's browser; exposing the slug would leak backend
+    # tenant identity. Routing is done server-side from the session.
     payee_name: str
     amount: float
     currency: str
     upi_uri: str
     configured: bool  # False when the tenant has no VPA set yet
+    # Names of cart items the server refused to bill (unknown or sold out),
+    # so the client can reconcile its local cart and tell the guest.
+    dropped: List[str] = []
 
 
 class UpiUpdate(BaseModel):
@@ -147,6 +203,7 @@ class OrderItem(BaseModel):
     price: float
     quantity: int
     line_total: float
+    instructions: str = ""
 
 
 class Order(BaseModel):
@@ -155,6 +212,7 @@ class Order(BaseModel):
     order_type: str = "dine_in"
     table_number: str
     customer_name: Optional[str] = None
+    zone: Optional[str] = None
     items: List[Dict[str, Any]]
     subtotal: float
     tax: float
@@ -176,6 +234,32 @@ class OrderPlaced(BaseModel):
     currency: str
 
 
+class MyOrder(BaseModel):
+    """A single order as the customer's own device may see it.
+
+    Deliberately customer-safe: no tenant_id, slug, internal order id, or
+    backend identifiers. ``status`` is the customer-facing label
+    (Paid / Preparing / Served / Cancelled), derived from the internal
+    kitchen status, not the raw internal value.
+    """
+    order_no: str
+    order_type: str = "dine_in"
+    status: str  # Paid | Preparing | Served | Cancelled
+    items: List[Dict[str, Any]]
+    total: float
+    currency: str
+    created_at: Any
+
+
+class MyOrdersResponse(BaseModel):
+    """The customer's view of their current session's orders."""
+    orders: List[MyOrder] = []
+    # True once every order in the session is served/cancelled and the session
+    # has been ended — the widget uses this to stop polling and show a "thanks,
+    # session closed" state so a new guest never inherits these orders.
+    session_ended: bool = False
+
+
 class CloseTableRequest(BaseModel):
     restaurant: str = Field(default="demo", max_length=64)
     table_number: str = Field(..., min_length=1, max_length=16)
@@ -193,6 +277,77 @@ class OrderStatusUpdate(BaseModel):
     payment_status: Optional[str] = Field(
         default=None, pattern="^(paid_unverified|verified|unpaid|refunded)$"
     )
+
+
+# ---- Manager dashboard ---------------------------------------------------
+
+class ManagerOrder(BaseModel):
+    id: int
+    order_no: str
+    order_type: str = "dine_in"
+    table_number: str
+    customer_name: Optional[str] = None
+    zone: Optional[str] = None
+    items: List[Dict[str, Any]]
+    subtotal: float
+    tax: float
+    total: float
+    currency: str
+    status: str
+    payment_status: str
+    created_at: Any
+
+
+class ReceiptProfile(BaseModel):
+    """Printed-receipt header fields for an outlet. All optional; blanks are
+    simply omitted from the printed receipt."""
+    name: str = ""
+    subtitle: str = ""
+    address: str = ""
+    fssai: str = ""
+    phone: str = ""
+    gstin: str = ""
+    footer: str = ""
+
+
+class ReceiptProfileUpdate(ReceiptProfile):
+    """Body for saving a receipt profile. Carries the restaurant slug."""
+    restaurant: str = Field(default="demo", max_length=64)
+
+
+class SecurityEvent(BaseModel):
+    """A recorded security event (e.g. a replay attempt) for staff review."""
+    id: int
+    event_type: str
+    session_id: Optional[str] = None
+    table_number: Optional[str] = None
+    detail: Dict[str, Any] = Field(default_factory=dict)
+    client_ip: Optional[str] = None
+    created_at: Any
+
+
+class SecurityStatus(BaseModel):
+    """Lightweight monitoring signal staff tooling can poll for alerting."""
+    recent_replay_attempts: int = 0
+    window_minutes: int = 60
+    alert: bool = False  # True when recent attempts exceed the threshold
+    events: List[SecurityEvent] = []
+
+
+class TableZone(BaseModel):
+    id: int
+    table_number: str
+    zone: str
+
+
+class TableUpsertRequest(BaseModel):
+    restaurant: str = Field(default="demo", max_length=64)
+    table_number: str = Field(..., min_length=1, max_length=32)
+    zone: str = Field(..., min_length=1, max_length=40)
+
+
+class MenuAvailabilityUpdate(BaseModel):
+    available: bool
 
 
 # ---- Reports -------------------------------------------------------------
@@ -243,6 +398,19 @@ class MenuItemIn(BaseModel):
         default=None, ge=0,
         validation_alias=AliasChoices("price_inr", "price"),
     )
+    # Optional per-zone price overrides, e.g. {"AC": 1350, "VIP": 1500}.
+    # Zones not listed fall back to the base price. Empty = base everywhere.
+    zone_prices: Dict[str, float] = Field(default_factory=dict)
+    # Sold-out toggle. Defaults to available.
+    available: bool = True
+
+
+class TableZoneIn(BaseModel):
+    """A single table -> zone mapping for JSON ingestion."""
+    model_config = {"extra": "ignore"}
+
+    table_number: str = Field(min_length=1, max_length=32)
+    zone: str = Field(default="Non-AC", max_length=40)
 
 
 class MenuJsonIn(BaseModel):
@@ -265,6 +433,9 @@ class MenuJsonIn(BaseModel):
     currency: str = Field(default="₹", max_length=8)
     upi_vpa: str = Field(default="", max_length=120)
     upi_name: str = Field(default="", max_length=120)
+    # Optional supported-zone list (informational) and table->zone mappings.
+    zones: List[str] = Field(default_factory=list)
+    tables: List[TableZoneIn] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod

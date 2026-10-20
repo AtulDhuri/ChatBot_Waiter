@@ -30,6 +30,9 @@ def calculate_bill(cart: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "price": round(price, 2),
                 "quantity": qty,
                 "line_total": line_total,
+                # Free-text customer note (empty string when none). Stored in
+                # the order's items JSONB and shown to kitchen/manager.
+                "instructions": (item.get("instructions") or ""),
             }
         )
 

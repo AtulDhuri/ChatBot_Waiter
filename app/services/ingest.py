@@ -70,15 +70,21 @@ async def ingest_menu_json(
     source_name: str = "menu.json",
     currency: str | None = None,
     update_name: bool = True,
+    tables: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     """Ingest a structured menu (list of item dicts) into DB + RAG store.
 
     Each item may carry: category, name, description, weight_gms,
-    calories_kcal, and price_inr (or price). This bypasses PDF parsing and the
-    heuristic extractor, so data lands exactly as supplied. One embedded RAG
-    sentence per dish keeps the chatbot functional.
+    calories_kcal, price_inr (or price), an optional ``zone_prices`` map
+    ({zone: price}) and an ``available`` flag. This bypasses PDF parsing and
+    the heuristic extractor, so data lands exactly as supplied. One embedded
+    RAG sentence per dish keeps the chatbot functional.
 
-    Idempotent per slug: existing documents and menu items are replaced.
+    ``tables`` is an optional list of {table_number, zone} mappings replacing
+    the restaurant's table->zone map.
+
+    Idempotent per slug: existing documents, menu items and (if provided)
+    table mappings are replaced.
     """
     cur = currency or settings.currency
     restaurant_id = await repo.get_or_create_restaurant(
@@ -130,11 +136,20 @@ async def ingest_menu_json(
             "category": it.get("category"),
             "price": it.get("price_inr", it.get("price")),
             "currency": cur,
+            # Per-zone price overrides {zone: price}; empty = base price only.
+            "zone_prices": it.get("zone_prices") or {},
+            # Defaults to True unless the item explicitly sets available=False.
+            "available": it.get("available"),
         }
         for it in clean
     ]
     await repo.clear_menu_items(session, restaurant_id)
     await repo.insert_menu_items(session, restaurant_id, menu_items)
+
+    # Optional table -> zone map shipped alongside the menu. Replacing the map
+    # keeps re-uploads idempotent, matching how menu_items are replaced.
+    if tables:
+        await repo.replace_tables(session, restaurant_id, tables)
 
     logger.info(
         "Ingested JSON %s: %d chunks, %d menu items",

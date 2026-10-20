@@ -25,8 +25,19 @@
       header button { cursor: pointer; background: #2e6cf0; border: none; }
       .dot { width: 9px; height: 9px; border-radius: 50%; background: #2e9e5b;
         display: inline-block; margin-right: 6px; }
-      .grid {
-        display: grid; gap: 14px; padding: 16px;
+      .grid { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+      .table-group { }
+      .table-head {
+        display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px;
+        padding-bottom: 6px; border-bottom: 1px solid #2a323c;
+      }
+      .table-head h2 { font-size: 16px; margin: 0; color: #eceff3; }
+      .table-head .count {
+        font-size: 12px; color: #8591a0; background: #1b2129;
+        padding: 2px 8px; border-radius: 20px;
+      }
+      .table-cards {
+        display: grid; gap: 14px;
         grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       }
       .card {
@@ -47,6 +58,11 @@
       .badge.takeaway { background: #332; color: #fd8; }
       .items { font-size: 14px; line-height: 1.5; }
       .items .q { color: #9fb; font-weight: 700; }
+      .items .note {
+        font-size: 12px; color: #ffd27f; margin: 2px 0 4px 18px;
+        font-style: italic;
+      }
+      .zone { font-size: 11px; color: #8fd1ff; }
       .meta { font-size: 12px; color: #8591a0; }
       .pay { font-size: 11px; }
       .pay.unverified { color: #e0a526; }
@@ -121,8 +137,13 @@
         return document.getElementById("restaurant").value.trim() || "demo";
       }
 
-      var NEXT = { new: "preparing", preparing: "ready", ready: "served" };
-      var NEXT_LABEL = { new: "Start", preparing: "Mark ready", ready: "Served" };
+      // Kitchen flow: New -> Preparing -> Served. We skip the internal "ready"
+      // stage here because the customer only ever sees Paid/Preparing/Served,
+      // so a separate "ready" click would look like nothing happened on their
+      // side. One "Served" click now moves the order straight to served, which
+      // the customer immediately sees as green "Served".
+      var NEXT = { new: "preparing", preparing: "served", ready: "served" };
+      var NEXT_LABEL = { new: "Start", preparing: "Served", ready: "Served" };
 
       function esc(s) {
         return String(s).replace(/[&<>]/g, function (c) {
@@ -141,6 +162,15 @@
         });
       }
 
+      // Group key for an order: dine-in orders group by their table number;
+      // takeaway has no table, so each groups on its own under "Takeaway".
+      function groupKey(o) {
+        return o.order_type === "takeaway" ? "__takeaway__" : (o.table_number || "-");
+      }
+      function groupLabel(o) {
+        return o.order_type === "takeaway" ? "🥡 Takeaway" : "Table " + o.table_number;
+      }
+
       function render(orders) {
         errEl.textContent = "";
         grid.innerHTML = "";
@@ -150,15 +180,48 @@
         }
         emptyEl.style.display = "none";
 
+        // Group orders by table so staff see all active orders for a table
+        // together. Each order stays a separate card (never merged).
+        var groups = {};
+        var order = [];
         orders.forEach(function (o) {
+          var k = groupKey(o);
+          if (!groups[k]) { groups[k] = { label: groupLabel(o), list: [] }; order.push(k); }
+          groups[k].list.push(o);
+        });
+
+        order.forEach(function (k) {
+          var g = groups[k];
+          var section = document.createElement("div");
+          section.className = "table-group";
+          var head = document.createElement("div");
+          head.className = "table-head";
+          head.innerHTML =
+            "<h2>" + esc(g.label) + "</h2>" +
+            "<span class='count'>" + g.list.length +
+            " order" + (g.list.length === 1 ? "" : "s") + "</span>";
+          section.appendChild(head);
+
+          var cards = document.createElement("div");
+          cards.className = "table-cards";
+          g.list.forEach(function (o) { cards.appendChild(buildCard(o)); });
+          section.appendChild(cards);
+          grid.appendChild(section);
+        });
+      }
+
+      function buildCard(o) {
           var card = document.createElement("div");
           card.className = "card " + o.status;
 
           var items = (o.items || [])
             .map(function (it) {
+              var note = it.instructions
+                ? "<div class='note'>📝 " + esc(it.instructions) + "</div>"
+                : "";
               return (
                 "<div><span class='q'>" + it.quantity + "×</span> " +
-                esc(it.name) + "</div>"
+                esc(it.name) + note + "</div>"
               );
             })
             .join("");
@@ -173,6 +236,7 @@
               ? "🥡 " + (o.customer_name ? esc(o.customer_name) : "Takeaway")
               : "Table " + esc(o.table_number)) +
             "</span></div>" +
+            (o.zone ? "<div class='zone'>Zone: " + esc(o.zone) + "</div>" : "") +
             "<div class='items'>" + items + "</div>" +
             "<div class='meta'>" + o.currency + Number(o.total).toFixed(2) +
             " · " + mins + " min ago · <span class='pay " +
@@ -220,8 +284,7 @@
           actions.appendChild(cancel);
 
           card.appendChild(actions);
-          grid.appendChild(card);
-        });
+          return card;
       }
 
       function showErr(e) {

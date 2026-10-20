@@ -64,11 +64,19 @@
         </div>
       </div>
 
+      <label for="staff">Staff token</label>
+      <input id="staff" type="password" placeholder="Your STAFF_TOKEN" />
+      <p class="hint">
+        Required to mint table codes. This stays on this page and is sent only
+        to your own server.
+      </p>
+
       <label for="base">Base URL (where the widget is hosted)</label>
       <input id="base" type="text" placeholder="https://your-host" />
       <p class="hint">
-        Leave blank to use this page's own origin. The slug becomes the tenant,
-        so re-upload a different menu under a new slug to test multiple hotels.
+        Leave blank to use this page's own origin. The QR encodes an opaque
+        table code — the restaurant slug is never put in the URL, so guests
+        can't see or guess your tenant.
       </p>
 
       <button id="go">Generate QR</button>
@@ -89,19 +97,39 @@
     <!-- QR library, vendored locally (no external dependency). -->
     <script src="/qrcode.min.js"></script>
     <script>
-      function buildUrl() {
-        var slug = document.getElementById("restaurant").value.trim() || "demo";
-        var table = document.getElementById("table").value.trim();
+      function baseUrl() {
         var base = document.getElementById("base").value.trim();
         if (!base) base = window.location.origin;
-        base = base.replace(/\/$/, "");
-        var url = base + "/?r=" + encodeURIComponent(slug);
-        if (table) url += "&t=" + encodeURIComponent(table);
-        return { url: url, slug: slug, table: table };
+        return base.replace(/\/$/, "");
       }
 
-      document.getElementById("go").addEventListener("click", function () {
-        var info = buildUrl();
+      // Ask the server to mint (or return) the durable opaque token for this
+      // table. The slug + staff token are used only for this authenticated
+      // call; the token that comes back is what goes in the QR.
+      function mintToken(slug, table, staff) {
+        return fetch("/qr/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Staff-Token": staff,
+          },
+          body: JSON.stringify({ restaurant: slug, table_number: table }),
+        }).then(function (r) {
+          if (!r.ok) {
+            return r.json().then(
+              function (e) {
+                throw new Error((e && e.detail) || "Couldn't create the code.");
+              },
+              function () {
+                throw new Error("Couldn't create the code (HTTP " + r.status + ").");
+              }
+            );
+          }
+          return r.json(); // { token, table_number }
+        });
+      }
+
+      function renderQr(url, table) {
         var out = document.getElementById("out");
         var box = document.getElementById("qrcode");
         var title = document.getElementById("title");
@@ -109,15 +137,13 @@
 
         out.style.display = "block";
         box.innerHTML = "";
-        title.textContent =
-          info.slug.replace(/[-_]+/g, " ").replace(/\b\w/g, function (c) {
-            return c.toUpperCase();
-          }) + (info.table ? " · Table " + info.table : "");
-        link.textContent = info.url;
+        // Show only a table label — never the slug/tenant.
+        title.textContent = table ? "Table " + table : "Table QR";
+        link.textContent = url;
 
         if (window.QRCode) {
           new QRCode(box, {
-            text: info.url,
+            text: url,
             width: 220,
             height: 220,
             correctLevel: QRCode.CorrectLevel.M,
@@ -125,14 +151,42 @@
         } else {
           box.innerHTML =
             "<p class='muted'>QR library unavailable. Use the link below:</p>" +
-            "<p><a href='" + info.url + "'>" + info.url + "</a></p>";
+            "<p><a href='" + url + "'>" + url + "</a></p>";
         }
+      }
+
+      document.getElementById("go").addEventListener("click", function () {
+        var slug = document.getElementById("restaurant").value.trim() || "demo";
+        var table = document.getElementById("table").value.trim();
+        var staff = document.getElementById("staff").value.trim();
+        var go = document.getElementById("go");
+
+        if (!table) {
+          alert("Enter a table number.");
+          return;
+        }
+
+        go.disabled = true;
+        var old = go.textContent;
+        go.textContent = "Generating…";
+
+        mintToken(slug, table, staff)
+          .then(function (data) {
+            var url =
+              baseUrl() + "/?r=" + encodeURIComponent(data.token);
+            renderQr(url, data.table_number || table);
+          })
+          .catch(function (err) {
+            alert(err.message);
+          })
+          .then(function () {
+            go.disabled = false;
+            go.textContent = old;
+          });
       });
 
-      // Auto-generate once on load for convenience.
-      window.addEventListener("load", function () {
-        document.getElementById("go").click();
-      });
+      // No auto-generate on load: minting a token requires the staff token to
+      // be entered first.
     </script>
   </body>
 </html>

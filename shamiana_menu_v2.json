@@ -1,0 +1,1060 @@
+{
+  "restaurant": "Shamiana Mumbai Colaba",
+  "currency": "₹",
+  "zones": [
+    "Non-AC",
+    "AC",
+    "Outdoor",
+    "VIP"
+  ],
+  "tables": [
+    {
+      "table_number": "T1",
+      "zone": "Non-AC"
+    },
+    {
+      "table_number": "T2",
+      "zone": "Non-AC"
+    },
+    {
+      "table_number": "A1",
+      "zone": "AC"
+    },
+    {
+      "table_number": "A2",
+      "zone": "AC"
+    },
+    {
+      "table_number": "G1",
+      "zone": "Outdoor"
+    },
+    {
+      "table_number": "G2",
+      "zone": "Outdoor"
+    },
+    {
+      "table_number": "V1",
+      "zone": "VIP"
+    },
+    {
+      "table_number": "V2",
+      "zone": "VIP"
+    }
+  ],
+  "categories": [
+    {
+      "name": "All Day Breakfast",
+      "items": [
+        {
+          "name": "Thatte Idli",
+          "description": "Sambhar, gun powder, coconut chutney",
+          "weight_gms": 391,
+          "calories_kcal": 385.57,
+          "price": 1200,
+          "zone_prices": {
+            "Non-AC": 1200,
+            "AC": 1320,
+            "Outdoor": 1260,
+            "VIP": 1500
+          },
+          "available": true
+        },
+        {
+          "name": "Bedmi Puri Raseele Aloo",
+          "description": "Lentil stuffed fried bread, potato curry, fennel chutney",
+          "weight_gms": 487,
+          "calories_kcal": 952.57,
+          "price": 1200,
+          "zone_prices": {
+            "Non-AC": 1200,
+            "AC": 1320,
+            "Outdoor": 1260,
+            "VIP": 1500
+          },
+          "available": true
+        },
+        {
+          "name": "Aloo Paratha",
+          "description": "White butter, set curd, panchranga pickle",
+          "weight_gms": 336,
+          "calories_kcal": 626.3,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Mascarpone Pancakes",
+          "description": "Mascarpone whipped cream, maple syrup",
+          "weight_gms": 306,
+          "calories_kcal": 585.07,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Bean Sprout & Roasted Beetroot Poha",
+          "description": "Beaten rice, Sriracha peanuts, spices",
+          "weight_gms": 344,
+          "calories_kcal": 850.71,
+          "price": 1400,
+          "zone_prices": {
+            "Non-AC": 1400,
+            "AC": 1540,
+            "Outdoor": 1470,
+            "VIP": 1750
+          },
+          "available": true
+        },
+        {
+          "name": "Accompaniments",
+          "description": "Crispy bacon, sausages, hash brown, mushroom",
+          "weight_gms": null,
+          "calories_kcal": null,
+          "price": 850,
+          "zone_prices": {
+            "Non-AC": 850,
+            "AC": 940,
+            "Outdoor": 890,
+            "VIP": 1060
+          },
+          "available": true
+        },
+        {
+          "name": "Eggs to Order",
+          "description": "Organic or local chicken eggs",
+          "price": 1100,
+          "zone_prices": {
+            "Non-AC": 1100,
+            "AC": 1210,
+            "Outdoor": 1160,
+            "VIP": 1380
+          },
+          "available": true,
+          "variants": [
+            {
+              "label": "Organic",
+              "weight_gms": 217,
+              "calories_kcal": 429.1
+            },
+            {
+              "label": "Local",
+              "weight_gms": 101,
+              "calories_kcal": 297.95
+            }
+          ]
+        },
+        {
+          "name": "Mediterranean Omelette",
+          "description": "Feta, olives, tomatoes, spinach",
+          "weight_gms": 275,
+          "calories_kcal": 441.1,
+          "price": 1100,
+          "zone_prices": {
+            "Non-AC": 1100,
+            "AC": 1210,
+            "Outdoor": 1160,
+            "VIP": 1380
+          },
+          "available": true
+        },
+        {
+          "name": "Shamiana Bread Omelette",
+          "description": "Bread, cheese, mint chutney, ketchup, potato chips",
+          "weight_gms": 310,
+          "calories_kcal": 520.49,
+          "price": 1100,
+          "zone_prices": {
+            "Non-AC": 1100,
+            "AC": 1210,
+            "Outdoor": 1160,
+            "VIP": 1380
+          },
+          "available": true
+        },
+        {
+          "name": "Brûlée French Toast",
+          "description": "Maple syrup, powdered sugar",
+          "weight_gms": 180,
+          "calories_kcal": 515.52,
+          "price": 1600,
+          "zone_prices": {
+            "Non-AC": 1600,
+            "AC": 1760,
+            "Outdoor": 1680,
+            "VIP": 2000
+          },
+          "available": true
+        }
+      ]
+    },
+    {
+      "name": "Sharing Plates & Starters",
+      "items": [
+        {
+          "name": "Vietnamese Pho",
+          "description": "Vegetable broth, rice noodle, lime, sprouts, scallion, chilli, hoisin",
+          "weight_gms": 355,
+          "calories_kcal": 342.15,
+          "price": 1000,
+          "zone_prices": {
+            "Non-AC": 1000,
+            "AC": 1100,
+            "Outdoor": 1050,
+            "VIP": 1250
+          },
+          "available": true
+        },
+        {
+          "name": "Jimikand aur Shinghade Ke Kebab",
+          "description": "Spiced yam, water chestnut, walnut chutney",
+          "weight_gms": 263,
+          "calories_kcal": 296.4,
+          "price": 1100,
+          "zone_prices": {
+            "Non-AC": 1100,
+            "AC": 1210,
+            "Outdoor": 1160,
+            "VIP": 1380
+          },
+          "available": true
+        },
+        {
+          "name": "Jaitooni Pudina Paneer Tikka",
+          "description": "Pepitas, raisin chaat, tomato chutney",
+          "weight_gms": 353,
+          "calories_kcal": 517.15,
+          "price": 1100,
+          "zone_prices": {
+            "Non-AC": 1100,
+            "AC": 1210,
+            "Outdoor": 1160,
+            "VIP": 1380
+          },
+          "available": true
+        },
+        {
+          "name": "Spanish Socca",
+          "description": "Chickpea, caramelized onion, olives, jalapeno, sour cream",
+          "weight_gms": 284,
+          "calories_kcal": 701.39,
+          "price": 1200,
+          "zone_prices": {
+            "Non-AC": 1200,
+            "AC": 1320,
+            "Outdoor": 1260,
+            "VIP": 1500
+          },
+          "available": true
+        },
+        {
+          "name": "Buddha Bowl",
+          "description": "Quinoa, chickpeas, edamame, hummus, chipotle aioli",
+          "weight_gms": 308,
+          "calories_kcal": 516.21,
+          "price": 1400,
+          "zone_prices": {
+            "Non-AC": 1400,
+            "AC": 1540,
+            "Outdoor": 1470,
+            "VIP": 1750
+          },
+          "available": true
+        },
+        {
+          "name": "Memsahib’s Chicken Broth",
+          "description": "Poee bread",
+          "weight_gms": 316,
+          "calories_kcal": 531.83,
+          "price": 1000,
+          "zone_prices": {
+            "Non-AC": 1000,
+            "AC": 1100,
+            "Outdoor": 1050,
+            "VIP": 1250
+          },
+          "available": true
+        },
+        {
+          "name": "Tortilla Four Ways",
+          "description": "Refried beans, cucumber, guacamole, jalapeno potatoes",
+          "weight_gms": 433,
+          "price": 1200,
+          "zone_prices": {
+            "Non-AC": 1200,
+            "AC": 1320,
+            "Outdoor": 1260,
+            "VIP": 1500
+          },
+          "available": true,
+          "variants": [
+            {
+              "label": "Vegetarian",
+              "calories_kcal": 647.34,
+              "price": 1200
+            },
+            {
+              "label": "With chicken sausages",
+              "calories_kcal": 823.33,
+              "price": 1400
+            }
+          ]
+        },
+        {
+          "name": "Paneer/Chicken Wrap",
+          "description": "Green apple relish",
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true,
+          "variants": [
+            {
+              "label": "Paneer",
+              "weight_gms": 417,
+              "calories_kcal": 824.16
+            },
+            {
+              "label": "Chicken",
+              "weight_gms": 487,
+              "calories_kcal": 1031.42
+            }
+          ]
+        },
+        {
+          "name": "Chicken Kare Pan",
+          "description": "Curried chicken bun, pickled vegetables, tonkatsu sauce",
+          "weight_gms": 405,
+          "calories_kcal": 1890.58,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Ajwaini Chicken Tikka",
+          "description": "Smoked fruit chaat, mint chutney",
+          "weight_gms": 307,
+          "calories_kcal": 265.95,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Bohri Samosa",
+          "description": "Smoked mutton mince, mint chutney",
+          "weight_gms": 192,
+          "calories_kcal": 409.34,
+          "price": 1750,
+          "zone_prices": {
+            "Non-AC": 1750,
+            "AC": 1930,
+            "Outdoor": 1840,
+            "VIP": 2190
+          },
+          "available": true
+        },
+        {
+          "name": "Kasundi Salmon Tikka",
+          "description": "Quinoa sprouts salad, cashew curry leaf chutney",
+          "weight_gms": 346,
+          "calories_kcal": 455.68,
+          "price": 1950,
+          "zone_prices": {
+            "Non-AC": 1950,
+            "AC": 2140,
+            "Outdoor": 2050,
+            "VIP": 2440
+          },
+          "available": true
+        }
+      ]
+    },
+    {
+      "name": "Parsi Specials",
+      "items": [
+        {
+          "name": "Masala ni Dar",
+          "description": "Parsi style masala dal",
+          "weight_gms": 342,
+          "calories_kcal": 519.5,
+          "price": 1150,
+          "zone_prices": {
+            "Non-AC": 1150,
+            "AC": 1260,
+            "Outdoor": 1210,
+            "VIP": 1440
+          },
+          "available": true
+        },
+        {
+          "name": "Patra ma Paneer",
+          "description": "Steamed cottage cheese in banana leaves",
+          "weight_gms": 367,
+          "calories_kcal": 736.63,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Lagansara Vegetable Stew",
+          "description": "Sweet, sour, dry vegetable stew",
+          "weight_gms": 328,
+          "calories_kcal": 596.63,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Jardaloo Salli Boti",
+          "description": "Lamb in sweet-sour gravy, straw potatoes",
+          "weight_gms": 388,
+          "calories_kcal": 465.21,
+          "price": 2250,
+          "zone_prices": {
+            "Non-AC": 2250,
+            "AC": 2480,
+            "Outdoor": 2360,
+            "VIP": 2810
+          },
+          "available": true
+        },
+        {
+          "name": "Patra Ni Machi",
+          "description": "Steamed pomfret in banana leaves",
+          "weight_gms": 335,
+          "calories_kcal": 824.64,
+          "price": 2650,
+          "zone_prices": {
+            "Non-AC": 2650,
+            "AC": 2920,
+            "Outdoor": 2780,
+            "VIP": 3310
+          },
+          "available": true
+        },
+        {
+          "name": "Parsi Pulao with Lamb Kebab",
+          "description": null,
+          "weight_gms": 670,
+          "calories_kcal": 1028.25,
+          "price": 2950,
+          "zone_prices": {
+            "Non-AC": 2950,
+            "AC": 3250,
+            "Outdoor": 3100,
+            "VIP": 3690
+          },
+          "available": true
+        }
+      ]
+    },
+    {
+      "name": "Nostalgic Shamiana",
+      "items": [
+        {
+          "name": "Pav Bhaji",
+          "description": "Spicy mashed potato & vegetables, buttered pav",
+          "weight_gms": 387,
+          "calories_kcal": 391.33,
+          "price": 1050,
+          "zone_prices": {
+            "Non-AC": 1050,
+            "AC": 1160,
+            "Outdoor": 1100,
+            "VIP": 1310
+          },
+          "available": true
+        },
+        {
+          "name": "Ragda Pattice",
+          "description": "Potato pattice, dried peas stew",
+          "weight_gms": 370,
+          "calories_kcal": 738.78,
+          "price": 1150,
+          "zone_prices": {
+            "Non-AC": 1150,
+            "AC": 1260,
+            "Outdoor": 1210,
+            "VIP": 1440
+          },
+          "available": true
+        },
+        {
+          "name": "Asparagus Roesti",
+          "description": "Potato roesti, creamed asparagus, Gruyere",
+          "weight_gms": 304,
+          "calories_kcal": 646.61,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Chicken Tikka Sandwich",
+          "description": null,
+          "weight_gms": 374,
+          "calories_kcal": 1857.55,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Kheema Mutter",
+          "description": "Minced lamb, peas, buttered pav",
+          "weight_gms": 369,
+          "calories_kcal": 1820.17,
+          "price": 1550,
+          "zone_prices": {
+            "Non-AC": 1550,
+            "AC": 1710,
+            "Outdoor": 1630,
+            "VIP": 1940
+          },
+          "available": true
+        },
+        {
+          "name": "Goan Pomfret Curry",
+          "description": "Coconut curry, basmati rice",
+          "weight_gms": 688,
+          "calories_kcal": 771.52,
+          "price": 2400,
+          "zone_prices": {
+            "Non-AC": 2400,
+            "AC": 2640,
+            "Outdoor": 2520,
+            "VIP": 3000
+          },
+          "available": true
+        }
+      ]
+    },
+    {
+      "name": "Comfort Mains",
+      "items": [
+        {
+          "name": "Chonka Mutter Palak",
+          "description": "Spinach, peas",
+          "weight_gms": 612,
+          "calories_kcal": 852.52,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Paneer Butter Masala",
+          "description": "Cottage cheese in tomato gravy",
+          "weight_gms": 632,
+          "calories_kcal": 650.33,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Malai Kofta",
+          "description": "Milk dumpling, saffron gravy",
+          "weight_gms": 653,
+          "calories_kcal": 1244.42,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Rajma Chawal",
+          "description": "Kidney beans stew, rice",
+          "weight_gms": 688,
+          "calories_kcal": 663.37,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Bombay Tawa Pulao",
+          "description": "Spicy rice, vegetables, raita",
+          "weight_gms": 566,
+          "calories_kcal": 598.26,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Millet Khichdi",
+          "description": "Mung bean, pearl millet, curd",
+          "weight_gms": 457,
+          "calories_kcal": 1709.18,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Chole Kulche",
+          "description": "Chickpeas, leavened bread",
+          "weight_gms": 610,
+          "calories_kcal": 1284.29,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Pakode wali Kadhi",
+          "description": "Rice, papad chura",
+          "weight_gms": 568,
+          "calories_kcal": 1016.72,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Risotto Amarillo",
+          "description": "Rice, chilli, corn, arugula, cheese",
+          "weight_gms": 371,
+          "calories_kcal": 517.17,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Mac n Cheese",
+          "description": "Double cheese sauce, baked",
+          "weight_gms": 247,
+          "calories_kcal": 408.54,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Orecchiette",
+          "description": "Pasta, celeriac cream, basil oil",
+          "weight_gms": 321,
+          "calories_kcal": 1288.43,
+          "price": 1650,
+          "zone_prices": {
+            "Non-AC": 1650,
+            "AC": 1820,
+            "Outdoor": 1730,
+            "VIP": 2060
+          },
+          "available": true
+        },
+        {
+          "name": "Yellow Thai Curry",
+          "description": null,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true,
+          "variants": [
+            {
+              "label": "Vegetables",
+              "weight_gms": 624,
+              "calories_kcal": 793.45
+            },
+            {
+              "label": "Chicken",
+              "weight_gms": 757,
+              "calories_kcal": 950.64
+            }
+          ]
+        },
+        {
+          "name": "Slow Roast Chicken",
+          "description": "Root vegetables, mushrooms, rosemary jus",
+          "weight_gms": 363,
+          "calories_kcal": 630.31,
+          "price": 1550,
+          "zone_prices": {
+            "Non-AC": 1550,
+            "AC": 1710,
+            "Outdoor": 1630,
+            "VIP": 1940
+          },
+          "available": true
+        },
+        {
+          "name": "Murgh Makhanwala",
+          "description": "Chicken in tomato cashew gravy",
+          "weight_gms": 513,
+          "calories_kcal": 779.25,
+          "price": 1650,
+          "zone_prices": {
+            "Non-AC": 1650,
+            "AC": 1820,
+            "Outdoor": 1730,
+            "VIP": 2060
+          },
+          "available": true
+        },
+        {
+          "name": "Qalia Mutton",
+          "description": "Lamb curry, naan",
+          "weight_gms": 691,
+          "calories_kcal": 771.85,
+          "price": 1750,
+          "zone_prices": {
+            "Non-AC": 1750,
+            "AC": 1930,
+            "Outdoor": 1840,
+            "VIP": 2190
+          },
+          "available": true
+        },
+        {
+          "name": "Gosht Pulao",
+          "description": "Mutton pulao, raita",
+          "weight_gms": 660,
+          "calories_kcal": 1062.14,
+          "price": 1750,
+          "zone_prices": {
+            "Non-AC": 1750,
+            "AC": 1930,
+            "Outdoor": 1840,
+            "VIP": 2190
+          },
+          "available": true
+        },
+        {
+          "name": "Cajun Fish n Chips",
+          "description": "Cornmeal batter, fries, aioli",
+          "weight_gms": 365,
+          "calories_kcal": 381.39,
+          "price": 1750,
+          "zone_prices": {
+            "Non-AC": 1750,
+            "AC": 1930,
+            "Outdoor": 1840,
+            "VIP": 2190
+          },
+          "available": true
+        },
+        {
+          "name": "Pollo Guisado",
+          "description": "Puerto Rican chicken, parsnip stew",
+          "weight_gms": 236,
+          "calories_kcal": 246.86,
+          "price": 1850,
+          "zone_prices": {
+            "Non-AC": 1850,
+            "AC": 2040,
+            "Outdoor": 1940,
+            "VIP": 2310
+          },
+          "available": true
+        },
+        {
+          "name": "Lumachine",
+          "description": "Pasta, lamb ragout, parmesan",
+          "weight_gms": 339,
+          "calories_kcal": 1190.91,
+          "price": 1950,
+          "zone_prices": {
+            "Non-AC": 1950,
+            "AC": 2140,
+            "Outdoor": 2050,
+            "VIP": 2440
+          },
+          "available": true
+        },
+        {
+          "name": "Duck Adobo",
+          "description": "Chilli peppers, jasmine rice, pakchoy",
+          "weight_gms": 285,
+          "calories_kcal": 422.37,
+          "price": 2800,
+          "zone_prices": {
+            "Non-AC": 2800,
+            "AC": 3080,
+            "Outdoor": 2940,
+            "VIP": 3500
+          },
+          "available": false
+        }
+      ]
+    },
+    {
+      "name": "International Grills",
+      "items": [
+        {
+          "name": "Yaki Onigiri with Grilled Tofu & Pineapple",
+          "description": "Smoked paprika, miso butter",
+          "weight_gms": 374,
+          "calories_kcal": 607.64,
+          "price": 1250,
+          "zone_prices": {
+            "Non-AC": 1250,
+            "AC": 1380,
+            "Outdoor": 1310,
+            "VIP": 1560
+          },
+          "available": true
+        },
+        {
+          "name": "Grilled Vegetable Skillet",
+          "description": "Sweet potatoes, corn, eggplant, fondue sauce",
+          "weight_gms": 307,
+          "calories_kcal": 148.56,
+          "price": 1750,
+          "zone_prices": {
+            "Non-AC": 1750,
+            "AC": 1930,
+            "Outdoor": 1840,
+            "VIP": 2190
+          },
+          "available": true
+        },
+        {
+          "name": "Herb & Lime Rubbed Salmon",
+          "description": "Tomato salad, pickle",
+          "weight_gms": 202,
+          "calories_kcal": 496.27,
+          "price": 2950,
+          "zone_prices": {
+            "Non-AC": 2950,
+            "AC": 3250,
+            "Outdoor": 3100,
+            "VIP": 3690
+          },
+          "available": true
+        },
+        {
+          "name": "Lamb Chops",
+          "description": "Green beans, saffron potato salad",
+          "weight_gms": 349,
+          "calories_kcal": 1087.83,
+          "price": 2950,
+          "zone_prices": {
+            "Non-AC": 2950,
+            "AC": 3250,
+            "Outdoor": 3100,
+            "VIP": 3690
+          },
+          "available": true
+        },
+        {
+          "name": "Pork Belly",
+          "description": "Green beans, saffron potato salad",
+          "weight_gms": 354,
+          "calories_kcal": 1058.21,
+          "price": 2600,
+          "zone_prices": {
+            "Non-AC": 2600,
+            "AC": 2860,
+            "Outdoor": 2730,
+            "VIP": 3250
+          },
+          "available": true
+        }
+      ]
+    },
+    {
+      "name": "Desserts",
+      "items": [
+        {
+          "name": "Brownie Sundae",
+          "description": "Waffle cup, butterscotch ice cream, hot chocolate brownie, almond brittle",
+          "weight_gms": 262,
+          "calories_kcal": 818.1,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Basque Cheese Cake",
+          "description": "Spanish cheesecake, cherry compote, vanilla Chantilly cream",
+          "weight_gms": 149,
+          "calories_kcal": 462.97,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Tiramisu",
+          "description": "Kahlua-soaked ladyfinger biscuit, mascarpone cheese",
+          "weight_gms": 225,
+          "calories_kcal": 745.72,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Rasmalai",
+          "description": "Poached cottage cheese dumplings in saffron milk, pistachio slivers",
+          "weight_gms": 172,
+          "calories_kcal": 224.34,
+          "price": 1000,
+          "zone_prices": {
+            "Non-AC": 1000,
+            "AC": 1100,
+            "Outdoor": 1050,
+            "VIP": 1250
+          },
+          "available": true
+        },
+        {
+          "name": "Apple Crumble with Vanilla Ice Cream",
+          "description": null,
+          "weight_gms": 200,
+          "calories_kcal": 367.88,
+          "price": 1100,
+          "zone_prices": {
+            "Non-AC": 1100,
+            "AC": 1210,
+            "Outdoor": 1160,
+            "VIP": 1380
+          },
+          "available": true
+        },
+        {
+          "name": "Spiced Carrot Cake",
+          "description": "Carrot cake, mascarpone frosting, carrot-orange jelly, pineapple compote",
+          "weight_gms": 141,
+          "calories_kcal": 417.23,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Baked Almond Cake",
+          "description": "Vanilla ice cream, toffee almond crumble, almond milk sauce",
+          "weight_gms": 124,
+          "calories_kcal": 471.45,
+          "price": 1350,
+          "zone_prices": {
+            "Non-AC": 1350,
+            "AC": 1490,
+            "Outdoor": 1420,
+            "VIP": 1690
+          },
+          "available": true
+        },
+        {
+          "name": "Vegan Hazelnut Chocolate Cake",
+          "description": "Vegan biscuit, hazelnut dark chocolate mousse",
+          "weight_gms": 174,
+          "calories_kcal": 792.95,
+          "price": 1000,
+          "zone_prices": {
+            "Non-AC": 1000,
+            "AC": 1100,
+            "Outdoor": 1050,
+            "VIP": 1250
+          },
+          "available": true
+        }
+      ]
+    }
+  ]
+}

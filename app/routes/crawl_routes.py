@@ -126,6 +126,7 @@ async def crawl_json(
         or slug.replace("-", " ").title()
     )
     items = [it.model_dump() for it in body.menu]
+    tables = [t.model_dump() for t in body.tables]
 
     result = await ingest_menu_json(
         db,
@@ -134,6 +135,7 @@ async def crawl_json(
         restaurant_name=display_name,
         source_name="menu.json",
         currency=body.currency,
+        tables=tables,
     )
 
     if body.upi_vpa.strip():

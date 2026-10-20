@@ -16,9 +16,11 @@ from app.routes import (
     ask_routes,
     bill_routes,
     crawl_routes,
+    manager_routes,
     menu_routes,
     order_routes,
     pay_routes,
+    qr_routes,
     report_routes,
     session_routes,
 )
@@ -52,6 +54,7 @@ app.add_middleware(
 
 # API routers
 app.include_router(session_routes.router)
+app.include_router(qr_routes.router)
 app.include_router(crawl_routes.router)
 app.include_router(menu_routes.router)
 app.include_router(ask_routes.router)
@@ -59,6 +62,7 @@ app.include_router(bill_routes.router)
 app.include_router(pay_routes.router)
 app.include_router(order_routes.router)
 app.include_router(report_routes.router)
+app.include_router(manager_routes.router)
 
 
 @app.get("/health", tags=["meta"])

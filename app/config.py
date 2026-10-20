@@ -2,8 +2,21 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Secrets that must never be used in production. A SESSION_SECRET that is one
+# of these (or too short) is treated as "not set".
+_WEAK_SECRETS = {
+    "",
+    "change-me-in-production",
+    "changeme",
+    "secret",
+    "dev",
+    "test",
+}
+_MIN_SECRET_LEN = 16
 
 
 class Settings(BaseSettings):
@@ -38,6 +51,15 @@ class Settings(BaseSettings):
     restaurant_name: str = "Demo Bistro"
     currency: str = "$"
 
+    # Deployment environment. "production" turns on fail-fast security checks:
+    # a weak/default SESSION_SECRET or a blank/weak STAFF_TOKEN will refuse to
+    # boot. Any value other than production/prod is treated as dev/demo and
+    # keeps the permissive out-of-the-box behaviour.
+    app_env: str = Field(
+        default="development",
+        validation_alias=AliasChoices("APP_ENV", "ENV", "ENVIRONMENT"),
+    )
+
     # UPI payment (display QR). Global defaults; per-tenant values in the
     # restaurants table override these. upi_currency is almost always INR.
     upi_vpa: str = Field(default="", validation_alias="UPI_VPA")
@@ -53,8 +75,15 @@ class Settings(BaseSettings):
         default="change-me-in-production", validation_alias="SESSION_SECRET"
     )
     # Shared secret that staff pages (kitchen/reports/admin) must present to
-    # reach protected endpoints. If blank, protection is DISABLED (demo mode).
+    # reach protected endpoints. If blank, protection is DISABLED (demo mode)
+    # — but ONLY outside production; in production a strong value is required.
     staff_token: str = Field(default="", validation_alias="STAFF_TOKEN")
+
+    # Sliding inactivity window for customer sessions. Kept short in production
+    # to shrink the replay window for a captured token. Overridable via env.
+    session_ttl_seconds: int = Field(
+        default=30 * 60, validation_alias="SESSION_TTL_SECONDS"
+    )
 
     # Retrieval / chunking
     top_k: int = Field(
@@ -72,6 +101,49 @@ class Settings(BaseSettings):
         elif v.startswith("postgresql://"):
             v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
         return v
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() in ("production", "prod")
+
+    @staticmethod
+    def _is_weak_secret(value: str) -> bool:
+        v = (value or "").strip()
+        return v.lower() in _WEAK_SECRETS or len(v) < _MIN_SECRET_LEN
+
+    @model_validator(mode="after")
+    def _enforce_production_secrets(self) -> "Settings":
+        """Fail fast when deployed to production without strong secrets.
+
+        In production:
+          - SESSION_SECRET must be set to a strong, non-default value so
+            session-token signatures cannot be forged.
+          - STAFF_TOKEN must be a strong, non-empty value so staff endpoints
+            are never left unauthenticated.
+        Outside production these are warnings only, preserving the zero-config
+        demo experience.
+        """
+        if not self.is_production:
+            return self
+        problems: List[str] = []
+        if self._is_weak_secret(self.session_secret):
+            problems.append(
+                "SESSION_SECRET is unset, default, or too short "
+                f"(need >= {_MIN_SECRET_LEN} chars)"
+            )
+        if self._is_weak_secret(self.staff_token):
+            problems.append(
+                "STAFF_TOKEN is unset, weak, or too short "
+                f"(need >= {_MIN_SECRET_LEN} chars)"
+            )
+        if problems:
+            raise ValueError(
+                "Refusing to start in production (APP_ENV="
+                f"{self.app_env!r}) due to insecure configuration: "
+                + "; ".join(problems)
+                + ". Set strong values and restart."
+            )
+        return self
 
     @property
     def cors_origin_list(self) -> List[str]:

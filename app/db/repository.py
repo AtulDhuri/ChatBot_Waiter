@@ -2,10 +2,28 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _as_date(value: Optional[str]) -> Optional[date]:
+    """Coerce a 'YYYY-MM-DD' string (or date/datetime) to a datetime.date.
+
+    asyncpg binds Python values by type, not by SQL cast, so a date filter
+    must be passed a real date object — a bare string raises a DataError
+    ('str' object has no attribute 'toordinal'). Returns None for falsy input
+    so callers can skip the filter.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value).strip())
 
 
 # ---- Restaurants ---------------------------------------------------------
@@ -86,6 +104,40 @@ async def set_restaurant_upi(
     )
 
 
+async def get_receipt_profile(
+    session: AsyncSession, restaurant_id: int
+) -> Dict[str, Any]:
+    """Return the restaurant's printed-receipt header fields as a dict.
+
+    Always returns a dict (empty when nothing has been configured yet) so
+    callers can treat every field as optional.
+    """
+    row = (
+        await session.execute(
+            text("SELECT receipt_profile FROM restaurants WHERE id = :rid"),
+            {"rid": restaurant_id},
+        )
+    ).mappings().first()
+    if not row:
+        return {}
+    profile = row.get("receipt_profile")
+    return dict(profile) if isinstance(profile, dict) else {}
+
+
+async def set_receipt_profile(
+    session: AsyncSession, restaurant_id: int, profile: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Persist the receipt header fields (overwrites the whole blob)."""
+    await session.execute(
+        text(
+            "UPDATE restaurants SET receipt_profile = CAST(:profile AS JSONB) "
+            "WHERE id = :rid"
+        ),
+        {"rid": restaurant_id, "profile": json.dumps(profile or {})},
+    )
+    return profile or {}
+
+
 # ---- Documents (vector store) -------------------------------------------
 
 async def clear_documents(session: AsyncSession, restaurant_id: int) -> None:
@@ -160,12 +212,16 @@ async def insert_menu_items(
     session: AsyncSession, restaurant_id: int, items: List[Dict[str, Any]]
 ) -> int:
     for it in items:
+        zone_prices = it.get("zone_prices") or {}
+        available = it.get("available")
         await session.execute(
             text(
                 """
                 INSERT INTO menu_items
-                    (restaurant_id, name, description, category, price, currency)
-                VALUES (:rid, :name, :description, :category, :price, :currency)
+                    (restaurant_id, name, description, category, price,
+                     currency, zone_prices, available)
+                VALUES (:rid, :name, :description, :category, :price,
+                        :currency, CAST(:zone_prices AS JSONB), :available)
                 """
             ),
             {
@@ -175,6 +231,9 @@ async def insert_menu_items(
                 "category": it.get("category"),
                 "price": it.get("price"),
                 "currency": it.get("currency", "$"),
+                "zone_prices": json.dumps(zone_prices),
+                # Default to available unless explicitly set False.
+                "available": False if available is False else True,
             },
         )
     return len(items)
@@ -187,7 +246,8 @@ async def get_menu_items(
         await session.execute(
             text(
                 """
-                SELECT id, name, description, category, price, currency
+                SELECT id, name, description, category, price, currency,
+                       zone_prices, available
                 FROM menu_items
                 WHERE restaurant_id = :rid
                 ORDER BY category NULLS LAST, name
@@ -197,6 +257,25 @@ async def get_menu_items(
         )
     ).mappings().all()
     return [dict(r) for r in rows]
+
+
+async def set_menu_item_available(
+    session: AsyncSession, restaurant_id: int, item_id: int, available: bool
+) -> Optional[Dict[str, Any]]:
+    """Toggle a single dish's availability. Returns the updated row or None."""
+    row = (
+        await session.execute(
+            text(
+                """
+                UPDATE menu_items SET available = :avail
+                WHERE id = :id AND restaurant_id = :rid
+                RETURNING id, name, available
+                """
+            ),
+            {"avail": available, "id": item_id, "rid": restaurant_id},
+        )
+    ).mappings().first()
+    return dict(row) if row else None
 
 
 async def get_price_lookup(
@@ -211,9 +290,18 @@ async def get_price_lookup(
     lookup: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         if r["name"]:
+            # zone_prices is a JSONB map {zone: price}; coerce values to float.
+            zp_raw = r.get("zone_prices") or {}
+            zone_prices = {
+                str(k): float(v)
+                for k, v in zp_raw.items()
+                if v is not None
+            }
             lookup[r["name"].strip().lower()] = {
                 "name": r["name"],
                 "price": float(r["price"]) if r["price"] is not None else 0.0,
+                "zone_prices": zone_prices,
+                "available": bool(r.get("available", True)),
             }
     return lookup
 
@@ -227,17 +315,39 @@ async def create_session(
     table_number: str,
     customer_name: Optional[str] = None,
     order_type: str = "dine_in",
+    zone: Optional[str] = None,
+    device_id: Optional[str] = None,
+    ua_hash: Optional[str] = None,
+    ttl_seconds: int = 7200,
 ) -> None:
+    """Create (or refresh) a session row.
+
+    ``device_id`` lets us recognize the same browser on a later rescan and,
+    together with ``ua_hash``, pins the session to one client so a replayed
+    token from a different device/UA is rejected. ``ttl_seconds`` sets the
+    initial inactivity window (``expires_at`` is kept sliding by
+    :func:`touch_session` on each authenticated call).
+    """
     await session.execute(
         text(
             """
             INSERT INTO sessions
-                (id, restaurant_id, table_number, customer_name, order_type, cart)
-            VALUES (:id, :rid, :table, :cname, :otype, '[]'::jsonb)
+                (id, restaurant_id, table_number, customer_name, order_type,
+                 zone, device_id, ua_hash, cart, last_seen_at, expires_at)
+            VALUES (
+                :id, :rid, :table, :cname, :otype, :zone, :device, :ua,
+                '[]'::jsonb,
+                now(), now() + make_interval(secs => :ttl)
+            )
             ON CONFLICT (id) DO UPDATE
                 SET table_number = EXCLUDED.table_number,
                     customer_name = EXCLUDED.customer_name,
                     order_type = EXCLUDED.order_type,
+                    zone = EXCLUDED.zone,
+                    device_id = EXCLUDED.device_id,
+                    ua_hash = EXCLUDED.ua_hash,
+                    last_seen_at = now(),
+                    expires_at = now() + make_interval(secs => :ttl),
                     updated_at = now()
             """
         ),
@@ -247,6 +357,10 @@ async def create_session(
             "table": table_number,
             "cname": customer_name,
             "otype": order_type,
+            "zone": zone,
+            "device": device_id,
+            "ua": ua_hash,
+            "ttl": ttl_seconds,
         },
     )
 
@@ -258,12 +372,238 @@ async def get_session_row(
         await session.execute(
             text(
                 "SELECT id, restaurant_id, table_number, customer_name, "
-                "order_type, cart FROM sessions WHERE id = :id"
+                "order_type, zone, cart, device_id, ua_hash, "
+                "last_seen_at, expires_at, "
+                "(expires_at IS NOT NULL AND expires_at <= now()) AS is_expired "
+                "FROM sessions WHERE id = :id"
             ),
             {"id": session_id},
         )
     ).mappings().first()
     return dict(row) if row else None
+
+
+async def touch_session(
+    session: AsyncSession, session_id: str, ttl_seconds: int = 7200
+) -> None:
+    """Slide a session's inactivity expiry forward on activity."""
+    await session.execute(
+        text(
+            "UPDATE sessions "
+            "SET last_seen_at = now(), "
+            "    expires_at = now() + make_interval(secs => :ttl), "
+            "    updated_at = now() "
+            "WHERE id = :id"
+        ),
+        {"id": session_id, "ttl": ttl_seconds},
+    )
+
+
+async def end_session(session: AsyncSession, session_id: str) -> None:
+    """Immediately expire a session (hard cutoff now).
+
+    Called once all of a session's orders are served so the same device/table
+    cannot continue it, and a new guest scanning the same QR gets a fresh
+    session that can never see the previous guest's orders.
+    """
+    if not session_id:
+        return
+    await session.execute(
+        text(
+            "UPDATE sessions "
+            "SET expires_at = now(), last_seen_at = now(), "
+            "    cart = '[]'::jsonb, updated_at = now() "
+            "WHERE id = :id"
+        ),
+        {"id": session_id},
+    )
+
+
+async def find_live_device_session(
+    session: AsyncSession,
+    restaurant_id: int,
+    table_number: str,
+    device_id: str,
+    ua_hash: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return the most recent non-expired session for this device at this
+    table, or None. Used to continue a cart when the same browser rescans.
+
+    When ``ua_hash`` is supplied we also require the stored UA fingerprint to
+    match, so a different browser (even sharing a stolen device_id) cannot
+    silently continue — it gets a fresh session instead.
+    """
+    if not device_id:
+        return None
+    params: Dict[str, Any] = {
+        "rid": restaurant_id,
+        "tn": table_number,
+        "device": device_id,
+    }
+    ua_clause = ""
+    if ua_hash is not None:
+        ua_clause = " AND ua_hash = :ua"
+        params["ua"] = ua_hash
+    row = (
+        await session.execute(
+            text(
+                "SELECT id, restaurant_id, table_number, customer_name, "
+                "order_type, zone, cart, device_id, ua_hash, last_seen_at, "
+                "expires_at "
+                "FROM sessions "
+                "WHERE restaurant_id = :rid AND table_number = :tn "
+                "  AND device_id = :device"
+                + ua_clause +
+                "  AND (expires_at IS NULL OR expires_at > now()) "
+                "ORDER BY last_seen_at DESC "
+                "LIMIT 1"
+            ),
+            params,
+        )
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+# ---- QR tokens (opaque table identity) ----------------------------------
+
+async def get_or_create_qr_token(
+    session: AsyncSession,
+    restaurant_id: int,
+    table_number: str,
+    token: str,
+) -> str:
+    """Return the opaque token for (tenant, table), creating it if absent.
+
+    One durable token per physical table sticker. If the table already has a
+    token we return the existing one (so re-generating a QR is idempotent and
+    doesn't invalidate stickers already printed). ``token`` is the candidate
+    used only when inserting a new row.
+    """
+    row = (
+        await session.execute(
+            text(
+                """
+                INSERT INTO qr_tokens (token, restaurant_id, table_number)
+                VALUES (:token, :rid, :tn)
+                ON CONFLICT (restaurant_id, table_number) DO UPDATE
+                    SET active = true
+                RETURNING token
+                """
+            ),
+            {"token": token, "rid": restaurant_id, "tn": table_number},
+        )
+    ).first()
+    return row[0]
+
+
+async def resolve_qr_token(
+    session: AsyncSession, token: str
+) -> Optional[Dict[str, Any]]:
+    """Resolve an opaque token to its tenant + table (server-side only).
+
+    Returns a dict with restaurant_id, slug, name, table_number when the token
+    exists and is active; otherwise None. The slug/id are for internal routing
+    and must never be returned to the customer.
+    """
+    if not token:
+        return None
+    row = (
+        await session.execute(
+            text(
+                "SELECT q.restaurant_id, q.table_number, r.slug, r.name "
+                "FROM qr_tokens q "
+                "JOIN restaurants r ON r.id = q.restaurant_id "
+                "WHERE q.token = :token AND q.active = true"
+            ),
+            {"token": token},
+        )
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+async def revoke_qr_token(
+    session: AsyncSession, restaurant_id: int, table_number: str
+) -> None:
+    await session.execute(
+        text(
+            "UPDATE qr_tokens SET active = false "
+            "WHERE restaurant_id = :rid AND table_number = :tn"
+        ),
+        {"rid": restaurant_id, "tn": table_number},
+    )
+
+
+# ---- Tables & zones ------------------------------------------------------
+
+async def get_table_zone(
+    session: AsyncSession, restaurant_id: int, table_number: str
+) -> Optional[str]:
+    """Return the zone for a given table, or None if the table isn't mapped.
+
+    A None result means "use base pricing" — unregistered tables behave
+    exactly like the pre-zone system.
+    """
+    row = (
+        await session.execute(
+            text(
+                "SELECT zone FROM restaurant_tables "
+                "WHERE restaurant_id = :rid AND table_number = :tn"
+            ),
+            {"rid": restaurant_id, "tn": table_number},
+        )
+    ).first()
+    return row[0] if row else None
+
+
+async def list_tables(
+    session: AsyncSession, restaurant_id: int
+) -> List[Dict[str, Any]]:
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id, table_number, zone FROM restaurant_tables "
+                "WHERE restaurant_id = :rid ORDER BY table_number"
+            ),
+            {"rid": restaurant_id},
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def upsert_table(
+    session: AsyncSession, restaurant_id: int, table_number: str, zone: str
+) -> Dict[str, Any]:
+    """Create or update a table -> zone mapping."""
+    row = (
+        await session.execute(
+            text(
+                """
+                INSERT INTO restaurant_tables (restaurant_id, table_number, zone)
+                VALUES (:rid, :tn, :zone)
+                ON CONFLICT (restaurant_id, table_number) DO UPDATE
+                    SET zone = EXCLUDED.zone, updated_at = now()
+                RETURNING id, table_number, zone
+                """
+            ),
+            {"rid": restaurant_id, "tn": table_number, "zone": zone},
+        )
+    ).mappings().first()
+    return dict(row)
+
+
+async def replace_tables(
+    session: AsyncSession, restaurant_id: int, tables: List[Dict[str, Any]]
+) -> int:
+    """Bulk-replace the table map (used by JSON menu ingestion)."""
+    count = 0
+    for t in tables:
+        tn = (t.get("table_number") or "").strip()
+        zone = (t.get("zone") or "Non-AC").strip() or "Non-AC"
+        if not tn:
+            continue
+        await upsert_table(session, restaurant_id, tn, zone)
+        count += 1
+    return count
 
 
 async def update_cart(
@@ -321,6 +661,9 @@ async def create_order(
     payment_status: str = "paid_unverified",
     order_type: str = "dine_in",
     customer_name: Optional[str] = None,
+    zone: Optional[str] = None,
+    session_id: Optional[str] = None,
+    device_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     order_no = await _next_order_no(session, restaurant_id)
     row = (
@@ -329,12 +672,13 @@ async def create_order(
                 """
                 INSERT INTO orders
                     (restaurant_id, order_no, order_type, table_number,
-                     customer_name, items,
+                     customer_name, zone, session_id, device_id, items,
                      subtotal, tax, total, currency, status, payment_status)
                 VALUES
-                    (:rid, :no, :otype, :table, :cname, CAST(:items AS JSONB),
+                    (:rid, :no, :otype, :table, :cname, :zone, :sid, :did,
+                     CAST(:items AS JSONB),
                      :subtotal, :tax, :total, :currency, 'new', :pay)
-                RETURNING id, order_no, order_type, customer_name, status,
+                RETURNING id, order_no, order_type, customer_name, zone, status,
                           payment_status, created_at
                 """
             ),
@@ -344,6 +688,9 @@ async def create_order(
                 "otype": order_type,
                 "table": table_number,
                 "cname": customer_name,
+                "zone": zone,
+                "sid": session_id,
+                "did": device_id,
                 "items": json.dumps(items),
                 "subtotal": subtotal,
                 "tax": tax,
@@ -399,11 +746,53 @@ async def list_orders(
             text(
                 f"""
                 SELECT id, order_no, order_type, table_number, customer_name,
-                       items, subtotal, tax, total, currency, status,
+                       zone, items, subtotal, tax, total, currency, status,
                        payment_status, created_at
                 FROM orders
                 WHERE {where}
                 ORDER BY created_at ASC
+                """
+            ),
+            params,
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def list_manager_orders(
+    session: AsyncSession,
+    restaurant_id: int,
+    status: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """All orders for the manager dashboard, newest first, with optional
+    status and date-range (inclusive, 'YYYY-MM-DD' UTC) filters."""
+    params: Dict[str, Any] = {"rid": restaurant_id}
+    where = "restaurant_id = :rid"
+    if status:
+        where += " AND status = :status"
+        params["status"] = status
+    # asyncpg binds by Python type, so pass real date objects (not strings):
+    # a str here raises DataError ("'str' object has no attribute 'toordinal'").
+    dfrom = _as_date(date_from)
+    dto = _as_date(date_to)
+    if dfrom is not None:
+        where += " AND created_at::date >= :dfrom"
+        params["dfrom"] = dfrom
+    if dto is not None:
+        where += " AND created_at::date <= :dto"
+        params["dto"] = dto
+    rows = (
+        await session.execute(
+            text(
+                f"""
+                SELECT id, order_no, order_type, table_number, customer_name,
+                       zone, items, subtotal, tax, total, currency, status,
+                       payment_status, created_at
+                FROM orders
+                WHERE {where}
+                ORDER BY created_at DESC
                 """
             ),
             params,
@@ -419,8 +808,9 @@ async def get_order(
         await session.execute(
             text(
                 "SELECT id, restaurant_id, order_no, order_type, table_number, "
-                "customer_name, items, subtotal, tax, total, currency, status, "
-                "payment_status, created_at FROM orders WHERE id = :id"
+                "customer_name, zone, session_id, device_id, items, subtotal, "
+                "tax, total, currency, status, payment_status, created_at "
+                "FROM orders WHERE id = :id"
             ),
             {"id": order_id},
         )
@@ -452,6 +842,67 @@ async def update_order_payment(
     )
 
 
+# ---- Session-scoped order views (customer-facing isolation) --------------
+
+async def list_session_orders(
+    session: AsyncSession, session_id: str
+) -> List[Dict[str, Any]]:
+    """Return ONLY the orders placed in the given session, oldest first.
+
+    This is what the customer's device sees: never other customers' orders,
+    even at the same physical table. Each order is an independent transaction
+    with its own status.
+    """
+    if not session_id:
+        return []
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT id, order_no, order_type, table_number, customer_name,
+                       zone, items, subtotal, tax, total, currency, status,
+                       payment_status, created_at
+                FROM orders
+                WHERE session_id = :sid
+                ORDER BY created_at ASC
+                """
+            ),
+            {"sid": session_id},
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def session_orders_all_served(
+    session: AsyncSession, session_id: str
+) -> bool:
+    """True when the session has at least one order and every one of its
+    orders is in a terminal state (served or cancelled).
+
+    Used to end a session so a new customer at the same table starts clean.
+    """
+    if not session_id:
+        return False
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT count(*) AS total,
+                       count(*) FILTER (
+                           WHERE status NOT IN ('served', 'cancelled')
+                       ) AS open_count
+                FROM orders
+                WHERE session_id = :sid
+                """
+            ),
+            {"sid": session_id},
+        )
+    ).mappings().first()
+    if not row or (row["total"] or 0) == 0:
+        return False
+    return (row["open_count"] or 0) == 0
+
+
 async def sales_report(
     session: AsyncSession,
     restaurant_id: int,
@@ -464,12 +915,15 @@ async def sales_report(
     """
     params: Dict[str, Any] = {"rid": restaurant_id}
     where = "restaurant_id = :rid AND status <> 'cancelled'"
-    if date_from:
+    # Bind real date objects; see list_manager_orders for why strings fail.
+    dfrom = _as_date(date_from)
+    dto = _as_date(date_to)
+    if dfrom is not None:
         where += " AND created_at::date >= :dfrom"
-        params["dfrom"] = date_from
-    if date_to:
+        params["dfrom"] = dfrom
+    if dto is not None:
         where += " AND created_at::date <= :dto"
-        params["dto"] = date_to
+        params["dto"] = dto
 
     totals = (
         await session.execute(

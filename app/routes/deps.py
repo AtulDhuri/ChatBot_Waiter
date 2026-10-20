@@ -1,9 +1,10 @@
 """Shared route dependencies: resolving and validating sessions."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from typing import List, Optional, Tuple
@@ -14,6 +15,9 @@ from app.config import settings
 from app.db import repository as repo
 from app.db.database import get_session
 from app.services import pricing, sessions as sess
+from app.services import security
+
+logger = logging.getLogger("waiter.security")
 
 
 async def require_staff(
@@ -23,14 +27,28 @@ async def require_staff(
     """Guard staff-only endpoints.
 
     Accepts the token from the 'X-Staff-Token' header or a '?token=' query
-    param (the latter lets static pages pass it easily). If STAFF_TOKEN is
-    unset, protection is disabled so the demo still runs out of the box.
+    param (the latter lets static pages pass it easily).
+
+    Outside production, if STAFF_TOKEN is unset, protection is disabled so the
+    demo still runs out of the box. In production this never happens: config
+    fail-fast (see Settings) refuses to boot without a strong STAFF_TOKEN, so
+    here we additionally guard against a misconfigured runtime by denying all
+    staff access when the token is somehow still empty.
     """
     expected = settings.staff_token
     if not expected:
-        return  # protection disabled (demo mode)
+        if settings.is_production:
+            # Defensive: should be unreachable because config fails fast, but
+            # never serve staff endpoints unauthenticated in production.
+            logger.error("STAFF_TOKEN empty in production; denying staff access.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Staff authentication required.",
+            )
+        return  # protection disabled (demo/dev mode only)
     provided = x_staff_token or token
-    if not provided or provided != expected:
+    # Constant-time comparison to avoid leaking the token via timing.
+    if not provided or not sess.constant_time_eq(provided, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Staff authentication required.",
@@ -53,13 +71,38 @@ async def resolve_cart(
     else:
         cart = row["cart"] or []
     lookup = await repo.get_price_lookup(db, row["restaurant_id"])
-    return pricing.reprice_cart(cart, lookup)
+    # The session's zone (resolved from the table at session start) selects
+    # per-zone prices. None -> base price, identical to pre-zone behaviour.
+    zone = row.get("zone")
+    return pricing.reprice_cart(cart, lookup, zone=zone)
+
+
+# Keep in sync with qr_routes.SESSION_TTL_SECONDS: every authenticated call
+# slides the session's expiry forward by this much. Driven by config so a
+# short production window shrinks the replay window for a captured token.
+SESSION_TTL_SECONDS = settings.session_ttl_seconds
 
 
 async def resolve_session(
-    token: str, db: AsyncSession
+    token: str,
+    db: AsyncSession,
+    request: Optional[Request] = None,
 ) -> Dict[str, Any]:
-    """Validate a signed token and load its DB row, or raise 401/404."""
+    """Validate a signed token, pin it to device+UA, enforce expiry, load row.
+
+    Raises:
+      - 401 for a tampered/forged token.
+      - 404 for an unknown session.
+      - 440 (login timeout) for an expired one.
+      - 403 when the caller's device_id or User-Agent does not match the
+        values the session was bound to (a likely replay from a stolen token).
+
+    When ``request`` is provided we read the ``X-Device-Id`` header and the
+    ``User-Agent`` and compare them to the session's stored ``device_id`` and
+    ``ua_hash``. A mismatch is logged and recorded as a security event so staff
+    monitoring can alert on it, then the request is rejected. On success the
+    sliding inactivity window is pushed forward.
+    """
     session_id = sess.verify(token)
     if session_id is None:
         raise HTTPException(
@@ -70,9 +113,66 @@ async def resolve_session(
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found. Please re-enter your table number.",
+            detail="Session not found. Please scan your table's QR code again.",
         )
+    if row.get("is_expired"):
+        # Expired by inactivity. The widget treats this as "start fresh".
+        raise HTTPException(
+            status_code=440,  # Login Timeout
+            detail="Your session expired. Please scan your table's QR code again.",
+        )
+
+    # ---- Device + UA pinning (replay defense) ---------------------------
+    if request is not None:
+        caller_device = (request.headers.get("x-device-id") or "").strip()[:128]
+        caller_ua_hash = sess.hash_ua(request.headers.get("user-agent"))
+        bound_device = row.get("device_id")
+        bound_ua = row.get("ua_hash")
+
+        # Only enforce against values that were actually bound. Sessions minted
+        # before pinning (no stored device/ua) are not retroactively rejected,
+        # but any session that WAS bound must match on every request.
+        mismatch_fields: List[str] = []
+        if bound_device and caller_device != bound_device:
+            mismatch_fields.append("device_id")
+        if bound_ua and caller_ua_hash != bound_ua:
+            mismatch_fields.append("user_agent")
+
+        if mismatch_fields:
+            client_ip = request.client.host if request.client else None
+            logger.warning(
+                "Session pinning mismatch (possible replay): session=%s "
+                "fields=%s ip=%s bound_device=%s caller_device=%s",
+                session_id,
+                ",".join(mismatch_fields),
+                client_ip,
+                _mask(bound_device),
+                _mask(caller_device),
+            )
+            await security.record_replay_attempt(
+                db,
+                session_id=session_id,
+                restaurant_id=row.get("restaurant_id"),
+                table_number=row.get("table_number"),
+                mismatch_fields=mismatch_fields,
+                client_ip=client_ip,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This session can't be used from here. Please scan "
+                "your table's QR code again.",
+            )
+
+    # Sliding expiry: this request counts as activity.
+    await repo.touch_session(db, session_id, SESSION_TTL_SECONDS)
     return row
+
+
+def _mask(value: Optional[str]) -> str:
+    """Mask an identifier for logs: keep a short prefix only."""
+    if not value:
+        return "-"
+    return value[:6] + "…" if len(value) > 6 else value
 
 
 async def get_db() -> AsyncSession:  # thin re-export for clarity in routers

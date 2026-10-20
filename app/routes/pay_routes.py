@@ -5,7 +5,7 @@ display payment: there is no gateway and no confirmation callback.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -57,11 +57,13 @@ async def set_upi(
 
 
 @router.post("", response_model=PayResponse)
-async def pay(body: PayRequest, db: AsyncSession = Depends(get_db)):
-    row = await resolve_session(body.session_id, db)
+async def pay(
+    body: PayRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
+    row = await resolve_session(body.session_id, db, request)
 
     # Re-price against the stored menu; client prices are never trusted.
-    cart, _dropped = await resolve_cart(db, row, body.cart)
+    cart, dropped = await resolve_cart(db, row, body.cart)
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty.")
 
@@ -69,7 +71,6 @@ async def pay(body: PayRequest, db: AsyncSession = Depends(get_db)):
     amount = bill["total"]
 
     restaurant = await repo.get_restaurant_by_id(db, row["restaurant_id"])
-    slug = restaurant["slug"] if restaurant else "demo"
 
     # Per-tenant VPA wins; fall back to the global env default.
     vpa = (restaurant.get("upi_vpa") if restaurant else None) or settings.upi_vpa
@@ -100,10 +101,10 @@ async def pay(body: PayRequest, db: AsyncSession = Depends(get_db)):
 
     return PayResponse(
         table_number=row["table_number"],
-        restaurant=slug,
         payee_name=payee_name,
         amount=amount,
         currency=settings.upi_currency,
         upi_uri=upi_uri,
         configured=configured,
+        dropped=dropped,
     )

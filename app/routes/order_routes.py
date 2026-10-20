@@ -3,7 +3,7 @@ kitchen workflow. Also exposes the kitchen's live list of active orders.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -18,6 +18,8 @@ from app.schemas import (
     CartItem,
     CloseTableRequest,
     CloseTableResponse,
+    MyOrder,
+    MyOrdersResponse,
     Order,
     OrderCreate,
     OrderParseRequest,
@@ -25,14 +27,32 @@ from app.schemas import (
     OrderPlaced,
     OrderStatusUpdate,
 )
-from app.services import billing, llm
+from app.services import billing, llm, sessions as sess
+
+
+# Map internal kitchen statuses to the customer-facing label set
+# (Paid -> Preparing -> Served). The customer never sees internal workflow
+# states like "new"/"ready"; those collapse into the three visible stages.
+_CUSTOMER_STATUS = {
+    "new": "Paid",
+    "preparing": "Preparing",
+    "ready": "Preparing",
+    "served": "Served",
+    "cancelled": "Cancelled",
+}
+
+
+def _customer_status(internal: str) -> str:
+    return _CUSTOMER_STATUS.get(internal, "Paid")
 
 router = APIRouter(tags=["orders"])
 
 
 @router.post("/order/parse", response_model=OrderParseResponse)
 async def parse_order(
-    body: OrderParseRequest, db: AsyncSession = Depends(get_db)
+    body: OrderParseRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
     """Interpret a free-text message into cart lines (gated LLM fallback).
 
@@ -40,7 +60,7 @@ async def parse_order(
     usage stays minimal. Prices are always taken from the stored menu — the
     model only picks dish names and quantities, never prices.
     """
-    row = await resolve_session(body.session_id, db)
+    row = await resolve_session(body.session_id, db, request)
 
     # Authoritative name->price map for this tenant.
     lookup = await repo.get_price_lookup(db, row["restaurant_id"])
@@ -71,13 +91,15 @@ async def parse_order(
 
 
 @router.post("/order", response_model=OrderPlaced)
-async def place_order(body: OrderCreate, db: AsyncSession = Depends(get_db)):
+async def place_order(
+    body: OrderCreate, request: Request, db: AsyncSession = Depends(get_db)
+):
     """Snapshot the cart into a permanent order and queue it for the kitchen.
 
     Pay-first flow: the client calls this after payment. The cart is turned
     into immutable line items so later price edits never change past sales.
     """
-    row = await resolve_session(body.session_id, db)
+    row = await resolve_session(body.session_id, db, request)
 
     # Re-price against the stored menu; client prices are never trusted.
     cart, _dropped = await resolve_cart(db, row, body.cart)
@@ -105,6 +127,12 @@ async def place_order(body: OrderCreate, db: AsyncSession = Depends(get_db)):
         payment_status=body.payment_status,
         order_type=order_type,
         customer_name=customer_name,
+        # Freeze the zone used for pricing onto the order.
+        zone=row.get("zone"),
+        # Bind the order to its session + device. This keeps each order an
+        # independent transaction and lets the customer see only their own.
+        session_id=row["id"],
+        device_id=row.get("device_id"),
     )
     # Clear the session cart now that it's been placed.
     await repo.update_cart(db, _sid(body.session_id), [])
@@ -118,6 +146,69 @@ async def place_order(body: OrderCreate, db: AsyncSession = Depends(get_db)):
         payment_status=order["payment_status"],
         total=bill["total"],
         currency=bill["currency"],
+    )
+
+
+@router.get("/my-orders", response_model=MyOrdersResponse)
+async def my_orders(
+    session_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Customer-facing: the orders placed in THIS session only.
+
+    The caller is identified solely by their signed session token (the opaque
+    ``session_id`` they already hold). We resolve it, then return only the
+    orders bound to that session — never another device's orders at the same
+    table. Statuses are the customer-safe labels Paid / Preparing / Served.
+    No tenant_id, slug, or internal order id is ever returned.
+
+    Side effect: once every order in the session is served/cancelled, the
+    session is ended so the same table cannot keep showing these orders to a
+    new guest. ``session_ended`` tells the widget to stop polling.
+    """
+    # Resolve the session. A subtlety: when the kitchen serves the LAST order
+    # of a session, the PATCH handler ends that session immediately (so a new
+    # guest at the table starts clean). If the customer's status poll then runs
+    # against the now-ended session, a strict resolve would 440 and the widget
+    # would freeze on the previous label ("Preparing") — the guest would never
+    # see the final "Served". So for this read-only, customer-facing status
+    # view we tolerate a just-ended/expired session: we still validate the
+    # signed token and load the row, then return the final statuses with
+    # session_ended=true (which tells the widget to show them once and stop).
+    try:
+        row = await resolve_session(session_id, db, request)
+    except HTTPException as e:
+        if e.status_code != 440:
+            raise  # forged token / unknown / device mismatch: still reject
+        inner = sess.verify(session_id)
+        row = await repo.get_session_row(db, inner) if inner else None
+        if row is None:
+            raise
+
+    orders = await repo.list_session_orders(db, row["id"])
+    all_served = await repo.session_orders_all_served(db, row["id"])
+    if all_served:
+        # Terminate the session so a new customer at the same table starts
+        # clean and can never see these orders. (Idempotent if already ended.)
+        await repo.end_session(db, row["id"])
+
+    return MyOrdersResponse(
+        orders=[
+            MyOrder(
+                order_no=o["order_no"],
+                order_type=o.get("order_type", "dine_in"),
+                status=_customer_status(o["status"]),
+                items=o["items"],
+                total=float(o["total"]),
+                currency=o["currency"] or settings.currency,
+                created_at=o["created_at"].isoformat()
+                if hasattr(o["created_at"], "isoformat")
+                else o["created_at"],
+            )
+            for o in orders
+        ],
+        session_ended=all_served,
     )
 
 
@@ -166,6 +257,17 @@ async def update_order(
         await repo.update_order_status(db, order_id, body.status)
     if body.payment_status:
         await repo.update_order_payment(db, order_id, body.payment_status)
+
+    # When this order reaches a terminal state, check whether its session is
+    # now fully served/cancelled and, if so, end the session. This ensures a
+    # new customer at the same table cannot inherit the previous session's
+    # orders. Orders placed before session binding existed have no session_id
+    # and are simply skipped.
+    if body.status in ("served", "cancelled"):
+        sid = existing.get("session_id") if existing else None
+        if sid and await repo.session_orders_all_served(db, sid):
+            await repo.end_session(db, sid)
+
     updated = await repo.get_order(db, order_id)
     return _to_order(updated)
 
@@ -177,6 +279,7 @@ def _to_order(r: dict) -> Order:
         order_type=r.get("order_type", "dine_in"),
         table_number=r["table_number"],
         customer_name=r.get("customer_name"),
+        zone=r.get("zone"),
         items=r["items"],
         subtotal=float(r["subtotal"]),
         tax=float(r["tax"]),
