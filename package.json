@@ -1,0 +1,19 @@
+{
+  "name": "chatbot-waiter-widget",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build tooling for the embeddable Chatbot Waiter widget. Source lives in src/widget/; the build bundles it into a single minified static/widget.js (IIFE, no deps) plus a sourcemap, so the embed stays plug-and-play.",
+  "scripts": {
+    "build": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --minify --sourcemap --outfile=static/widget.js",
+    "build:dev": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --outfile=static/widget.js --banner:js=\"/* Chatbot Waiter widget — dev bundle. Edit src/widget/*.js, then run `npm run build`. */\"",
+    "watch": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --outfile=static/widget.js --watch",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "pretest": "npm run build",
+    "test": "node test/widget.runtime.test.mjs",
+    "check": "npm run check:bundle && npm run test"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "jsdom": "^30.1.3"
+  }
+}

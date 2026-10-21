@@ -85,3 +85,84 @@ Then open:
 ```powershell
 deactivate
 ```
+
+## Building the embeddable widget
+
+The chat widget shipped at `static/widget.js` is a **generated bundle**. Do not
+edit it by hand. The source lives as small ES modules under `src/widget/` and is
+bundled into a single self-contained IIFE (no dependencies) by
+[esbuild](https://esbuild.github.io/), so the embed stays plug-and-play:
+
+```html
+<script src="https://your-host/widget.js" data-restaurant="slug"></script>
+```
+
+### One-time setup
+
+```powershell
+npm install
+```
+
+### Build after editing `src/widget/*.js`
+
+```powershell
+npm run build          # production: minified static/widget.js + widget.js.map
+npm run watch          # readable rebuild on change while developing
+npm run build:dev      # one-off readable (un-minified) build
+```
+
+`npm run build` ships a **minified** `static/widget.js` (~38KB vs ~63KB) plus a
+`static/widget.js.map` sourcemap. The sourcemap embeds the original module
+source (`sourcesContent`), so you can debug the real `src/widget/` code in the
+browser even though only the bundle and map are deployed. Both files are
+committed and served; `src/`, `scripts/`, `test/`, and the bundler are excluded
+from the Docker image.
+
+### Module layout (`src/widget/`)
+
+| Module            | Responsibility                                            |
+| ----------------- | --------------------------------------------------------- |
+| `config.js`       | Script/URL config, tenant identity, device id, `api/money`|
+| `state.js`        | Shared runtime state, `ui` refs, session persistence      |
+| `dom.js`          | `el`, `_guard`, `addMessage` helpers                      |
+| `styles.js`       | Injected CSS                                              |
+| `api.js`          | All network calls, QR-token resolve, transparent re-auth  |
+| `cart.js`         | Cart state + the `updateCartBadge` sync orchestrator      |
+| `availability.js` | Live sold-out / re-price polling with backoff             |
+| `status.js`       | Live order-status tracking (Paid → Preparing → Served)    |
+| `nlorder.js`      | Natural-language order parsing / dish matching            |
+| `flows.js`        | Menu, cart, payment, bill flows and the chat handler      |
+| `render.js`       | Panel, chat, prompts, quick chips, FAB, toggle            |
+| `index.js`        | Boot wiring + `window.ChatbotWaiter` entry point          |
+
+The FastAPI server serves the built file as-is at `/widget.js`, so after any
+source change run `npm run build` before testing in the browser.
+
+### Testing the widget
+
+```powershell
+npm test
+```
+
+This rebuilds the bundle (`pretest`) and runs a jsdom browser-runtime test
+(`test/widget.runtime.test.mjs`) that loads the real `static/widget.js`, mocks
+the backend, and drives the full flow — open panel, start a session, render the
+menu, add items, view the cart, and fetch the bill — asserting the DOM updates
+correctly. It needs no server or database.
+
+### Guarding against bundle drift
+
+Because `static/widget.js` is generated, it can fall out of sync with
+`src/widget/` if someone edits a module but forgets to rebuild (or hand-edits
+the bundle). The drift guard catches this:
+
+```powershell
+npm run check:bundle   # fails if static/widget.js != a fresh build of the source
+npm run check          # drift guard + full test suite (use this in CI / pre-push)
+```
+
+`check:bundle` rebuilds the source in-memory with the exact production options
+and compares byte-for-byte against the committed bundle. If they differ it exits
+non-zero with a reminder to run `npm run build` and commit the result. Wire
+`npm run check` into CI or a pre-push hook so a stale bundle never reaches
+production.

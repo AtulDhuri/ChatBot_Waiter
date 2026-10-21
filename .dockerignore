@@ -35,3 +35,13 @@ Dockerfile
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Node / widget build tooling — the image only needs the built static/widget.js,
+# not the module source or the bundler.
+node_modules/
+npm-debug.log*
+src/
+scripts/
+test/
+package.json
+package-lock.json
