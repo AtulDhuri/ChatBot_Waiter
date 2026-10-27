@@ -39,6 +39,7 @@ export function startSession(label) {
     .then(function (data) {
       state.token = data.session_id;
       state.tableNumber = takeaway ? "-" : label;
+      state.paymentMode = data.payment_mode || "prepaid";
       if (takeaway) state.customerName = label;
       if (data.restaurant_name) {
         CONFIG.title = data.restaurant_name;
@@ -76,6 +77,7 @@ export function resolveQrToken() {
       state.tableNumber = data.table_number || "-";
       state.orderType = data.order_type || "dine_in";
       state.zone = data.zone || null;
+      state.paymentMode = data.payment_mode || "prepaid";
       state.cart = Array.isArray(data.cart) ? data.cart : [];
       applyRestaurantName(data.restaurant_name || CONFIG.title);
       saveSession();
@@ -273,6 +275,18 @@ export function fetchPlaceOrder(orderType) {
 export function fetchPay() {
   return postJson("/pay", function () {
     return { session_id: state.token, cart: state.cart };
+  });
+}
+
+export function fetchPostpaidPay() {
+  return postJson("/postpaid/pay", function () {
+    return { session_id: state.token };
+  });
+}
+
+export function fetchPostpaidBill() {
+  return postJson("/postpaid/bill", function () {
+    return { session_id: state.token };
   });
 }
 

@@ -78,7 +78,7 @@ export function injectStyles() {
     ".wa-status-head{display:flex;justify-content:space-between;align-items:center;}" +
     ".wa-status-no{font-weight:700;font-size:13px;color:#222;}" +
     ".wa-status-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;}" +
-    ".wa-st-paid{background:#eef2ff;color:#3b53c0;}" +
+    ".wa-st-placed{background:#eef2ff;color:#3b53c0;}" +
     ".wa-st-preparing{background:#fff5e0;color:#a5720a;}" +
     ".wa-st-served{background:#eafaf0;color:#2e9e5b;}" +
     ".wa-st-cancelled{background:#fdecec;color:#b53030;}" +
@@ -95,7 +95,10 @@ export function injectStyles() {
     ".wa-node.active .wa-node-dot{background:#fff;border-color:#2e9e5b;color:#2e9e5b;box-shadow:0 0 0 0 rgba(46,158,91,.45);animation:wa-pulse 1.8s infinite;}" +
     ".wa-node.active .wa-node-label{color:#2e9e5b;font-weight:700;}" +
     ".wa-status-cancel-note{font-size:12px;color:#b53030;margin:10px 0 2px;}" +
-    ".wa-status-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding-top:9px;border-top:1px dashed #eee;}" +
+    ".wa-status-items{margin:10px 0 2px;padding:8px 0;border-top:1px dashed #eee;border-bottom:1px dashed #eee;display:flex;flex-direction:column;gap:5px;}" +
+    ".wa-status-item{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#444;}" +
+    ".wa-order-items{margin-top:9px;padding-top:8px;border-top:1px dashed #eee;display:flex;flex-direction:column;gap:4px;}" +
+    ".wa-order-item{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#444;}" +
     ".wa-status-total-label{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.4px;font-weight:600;}" +
     ".wa-status-total-amt{font-size:15px;font-weight:800;color:#222;}" +
     "@media (max-width:600px){" +

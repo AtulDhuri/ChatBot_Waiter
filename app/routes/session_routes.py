@@ -63,6 +63,7 @@ async def create_session(
         restaurant_name=(rest["name"] if rest else body.restaurant),
         zone=zone,
         cart=[],
+        payment_mode=(rest.get("payment_mode") if rest else "prepaid") or "prepaid",
     )
 
 
@@ -83,4 +84,5 @@ async def get_session_info(
         restaurant_name=(rest["name"] if rest else ""),
         zone=row.get("zone"),
         cart=row["cart"],
+        payment_mode=(rest.get("payment_mode") if rest else "prepaid") or "prepaid",
     )

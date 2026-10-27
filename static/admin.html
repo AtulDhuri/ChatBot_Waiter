@@ -83,7 +83,19 @@
       <label for="upiName">Payee name shown to guests</label>
       <input id="upiName" type="text" placeholder="e.g. Seaside Grill" />
 
+      <label for="paymentMode">Ordering and payment mode</label>
+      <select id="paymentMode">
+        <option value="prepaid">Prepaid: pay before kitchen order</option>
+        <option value="postpaid">Postpaid: order first, pay final bill</option>
+      </select>
+      <p class="muted" style="margin-top:4px">
+        In postpaid mode, orders go to the kitchen immediately and the table closes only after the final bill is paid.
+      </p>
+
       <button id="go">Upload &amp; Ingest</button>
+      <button id="saveMode" style="background:#7a4fd1;margin-left:8px">
+        Save payment mode
+      </button>
       <button id="saveUpi" style="background:#2e9e5b;margin-left:8px">
         Save UPI only
       </button>
@@ -111,6 +123,7 @@
       promptToken(false);
 
       var go = document.getElementById("go");
+      var saveMode = document.getElementById("saveMode");
       var statusEl = document.getElementById("status");
       go.addEventListener("click", function () {
         var file = document.getElementById("file").files[0];
@@ -226,6 +239,47 @@
           .catch(fail)
           .finally(done);
       });
+
+      // Save the restaurant's ordering/payment mode without re-uploading a menu.
+      saveMode.addEventListener("click", function () {
+        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
+        saveMode.disabled = true;
+        sfetch("/pay/mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            restaurant: restaurant,
+            payment_mode: document.getElementById("paymentMode").value,
+          }),
+        })
+          .then(function (r) {
+            return r.json().then(function (d) {
+              if (!r.ok) throw new Error(d.detail || "save failed");
+              return d;
+            });
+          })
+          .then(function (d) {
+            statusEl.className = "status ok";
+            statusEl.textContent = "Payment mode saved: " + d.payment_mode;
+          })
+          .catch(function (e) {
+            statusEl.className = "status err";
+            statusEl.textContent = "Couldn't save payment mode: " + e.message;
+          })
+          .finally(function () { saveMode.disabled = false; });
+      });
+
+      function loadPaymentMode() {
+        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
+        fetch("/pay/mode?restaurant=" + encodeURIComponent(restaurant))
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            document.getElementById("paymentMode").value = d.payment_mode || "prepaid";
+          })
+          .catch(function () {});
+      }
+      document.getElementById("restaurant").addEventListener("change", loadPaymentMode);
+      window.addEventListener("load", loadPaymentMode);
 
       // Save/update UPI without re-uploading the menu.
       var saveUpi = document.getElementById("saveUpi");

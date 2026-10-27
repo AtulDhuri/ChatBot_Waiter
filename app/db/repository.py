@@ -68,7 +68,7 @@ async def get_restaurant_by_slug(
     row = (
         await session.execute(
             text(
-                "SELECT id, slug, name, upi_vpa, upi_name "
+                "SELECT id, slug, name, upi_vpa, upi_name, payment_mode "
                 "FROM restaurants WHERE slug = :slug"
             ),
             {"slug": slug},
@@ -83,13 +83,24 @@ async def get_restaurant_by_id(
     row = (
         await session.execute(
             text(
-                "SELECT id, slug, name, upi_vpa, upi_name "
+                "SELECT id, slug, name, upi_vpa, upi_name, payment_mode "
                 "FROM restaurants WHERE id = :rid"
             ),
             {"rid": restaurant_id},
         )
     ).mappings().first()
     return dict(row) if row else None
+
+
+async def set_restaurant_payment_mode(
+    session: AsyncSession, slug: str, payment_mode: str
+) -> None:
+    if payment_mode not in ("prepaid", "postpaid"):
+        raise ValueError("Unsupported payment mode")
+    await session.execute(
+        text("UPDATE restaurants SET payment_mode = :mode WHERE slug = :slug"),
+        {"mode": payment_mode, "slug": slug},
+    )
 
 
 async def set_restaurant_upi(
@@ -510,7 +521,8 @@ async def resolve_qr_token(
     row = (
         await session.execute(
             text(
-                "SELECT q.restaurant_id, q.table_number, r.slug, r.name "
+                "SELECT q.restaurant_id, q.table_number, r.slug, r.name, "
+                "r.payment_mode "
                 "FROM qr_tokens q "
                 "JOIN restaurants r ON r.id = q.restaurant_id "
                 "WHERE q.token = :token AND q.active = true"
@@ -871,6 +883,60 @@ async def list_session_orders(
         )
     ).mappings().all()
     return [dict(r) for r in rows]
+
+
+async def close_session_orders(
+    session: AsyncSession, session_id: str
+) -> int:
+    """Mark served, paid orders closed at settlement time."""
+    result = await session.execute(
+        text(
+            "UPDATE orders SET closed_at = now(), updated_at = now() "
+            "WHERE session_id = :sid AND status = 'served' "
+            "AND payment_status = 'verified' AND closed_at IS NULL"
+        ),
+        {"sid": session_id},
+    )
+    return result.rowcount or 0
+
+
+async def session_orders_all_served_and_paid(
+    session: AsyncSession, session_id: str
+) -> bool:
+    """True when every order is terminal and its payment is verified.
+
+    Cancelled orders do not require payment. This keeps the customer's order
+    history visible until the table is both served and paid.
+    """
+    if not session_id:
+        return False
+    row = (
+        await session.execute(
+            text(
+                "SELECT count(*) AS total, "
+                "       count(*) FILTER (WHERE status IN ('served', 'cancelled') "
+                "         AND (status = 'cancelled' OR payment_status = 'verified')) AS closed "
+                "FROM orders WHERE session_id = :sid"
+            ),
+            {"sid": session_id},
+        )
+    ).mappings().first()
+    return bool(row and row["total"] and row["total"] == row["closed"])
+
+
+async def mark_session_paid(
+    session: AsyncSession, session_id: str
+) -> int:
+    """Mark all non-cancelled orders in a postpaid session paid."""
+    result = await session.execute(
+        text(
+            "UPDATE orders SET payment_status = 'verified', updated_at = now() "
+            "WHERE session_id = :sid AND status <> 'cancelled' "
+            "AND payment_status <> 'verified'"
+        ),
+        {"sid": session_id},
+    )
+    return result.rowcount or 0
 
 
 async def session_orders_all_served(

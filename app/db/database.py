@@ -76,12 +76,16 @@ _SCHEMA_STATEMENTS = [
         name        TEXT NOT NULL,
         upi_vpa     TEXT,
         upi_name    TEXT,
+        payment_mode TEXT NOT NULL DEFAULT 'prepaid',
         created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     """,
     # Backfill columns for pre-existing installs (idempotent).
     "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS upi_vpa TEXT;",
     "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS upi_name TEXT;",
+    "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS payment_mode TEXT NOT NULL DEFAULT 'prepaid';",
+    "ALTER TABLE restaurants DROP CONSTRAINT IF EXISTS restaurants_payment_mode_check;",
+    "ALTER TABLE restaurants ADD CONSTRAINT restaurants_payment_mode_check CHECK (payment_mode IN ('prepaid', 'postpaid'));",
     # Printed-receipt header fields (name override, subtitle, address, FSSAI,
     # phone, GSTIN, footer). Stored as a JSONB blob so staff can edit the shop's
     # legal/receipt details from the manager dashboard without a schema change
@@ -213,7 +217,9 @@ _SCHEMA_STATEMENTS = [
     # orders (placed before this column existed) stay valid.
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS session_id TEXT;",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS device_id TEXT;",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;",
     "CREATE INDEX IF NOT EXISTS orders_session_idx ON orders(session_id);",
+    "CREATE INDEX IF NOT EXISTS orders_closed_idx ON orders(closed_at);",
     "CREATE INDEX IF NOT EXISTS orders_restaurant_idx ON orders(restaurant_id);",
     "CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);",
     "CREATE INDEX IF NOT EXISTS orders_created_idx ON orders(created_at);",

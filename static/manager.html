@@ -65,7 +65,9 @@
       .pill.ready { background: #d1fadf; color: #027a48; }
       .pill.served { background: #eaecf0; color: #475467; }
       .pill.cancelled { background: #eaecf0; color: #98a2b3; text-decoration: line-through; }
-      .pay { font-size: 11px; color: #667085; }
+      .pay { font-size: 11px; color: #667085; text-transform: uppercase; font-weight: 700; }
+      .pay.paid { color: #16803c; }
+      .pay.unpaid { color: #b54708; }
       .items { border-top: 1px dashed #e4e7ec; padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
       .items .line { font-size: 13px; display: flex; justify-content: space-between; gap: 8px; }
       .items .line .nm { color: #1d2430; }
@@ -77,6 +79,8 @@
       .bill-actions { display: flex; gap: 8px; margin-top: 2px; }
       .bill-actions button { flex: 1; font-size: 13px; }
       button.print { background: #0e9f6e; color: #fff; border: none; }
+      button.mark-paid { background: #2e6cf0; color: #fff; border: none; }
+      button.mark-unpaid { background: #fff; color: #b54708; border: 1px solid #f79009; }
 
       .empty { padding: 40px; text-align: center; color: #98a2b3; }
       .err { color: #b42318; padding: 0 18px; }
@@ -337,7 +341,8 @@
               "</div>" +
               "<div class='badges'>" +
                 "<span class='pill " + esc(o.status) + "'>" + esc(o.status) + "</span>" +
-                "<span class='pay'>" + esc(String(o.payment_status).replace(/_/g, " ")) + "</span>" +
+                "<span class='pay " + (o.payment_status === "verified" ? "paid" : "unpaid") + "'>" +
+                  (o.payment_status === "verified" ? "PAID" : "UNPAID") + "</span>" +
               "</div>" +
             "</div>" +
             "<div class='items'>" + itemsBlock(o.items, cur) + "</div>" +
@@ -348,6 +353,9 @@
             "</div>" +
             "<div class='bill-actions'>" +
               "<button class='print' data-id='" + esc(o.id) + "'>🖨 Print receipt</button>" +
+              (o.payment_status !== "verified"
+                ? "<button class='mark-paid' data-id='" + esc(o.id) + "' data-payment='paid'>✓ Mark bill PAID</button>"
+                : "<button class='mark-unpaid' data-id='" + esc(o.id) + "' data-payment='unpaid'>↩ Mark bill UNPAID</button>") +
             "</div>";
           cardsEl.appendChild(card);
         });
@@ -356,6 +364,30 @@
         Array.prototype.forEach.call(cardsEl.querySelectorAll("button.print"), function (btn) {
           btn.addEventListener("click", function () {
             printReceipt(ORDERS[btn.getAttribute("data-id")]);
+          });
+        });
+        // Payment is independent of kitchen status and is available for both
+        // prepaid (paid_unverified) and postpaid (unpaid) orders.
+        Array.prototype.forEach.call(cardsEl.querySelectorAll("button.mark-paid, button.mark-unpaid"), function (btn) {
+          btn.addEventListener("click", function () {
+            btn.disabled = true;
+            var isPaid = btn.getAttribute("data-payment") === "paid";
+            sfetch("/order/" + encodeURIComponent(btn.getAttribute("data-id")), {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                payment_status: isPaid ? "verified" : "unpaid",
+              }),
+            })
+              .then(function (r) {
+                if (!r.ok) throw new Error("Could not change payment status");
+                return r.json();
+              })
+              .then(load)
+              .catch(function (e) {
+                btn.disabled = false;
+                errEl.textContent = e.message;
+              });
           });
         });
       }

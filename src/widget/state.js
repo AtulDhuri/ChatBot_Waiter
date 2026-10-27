@@ -10,6 +10,7 @@ export var state = {
   orderType: null, // 'dine_in' | 'takeaway'
   customerName: null, // for takeaway
   zone: null, // pricing zone label (from the token/table); display only
+  paymentMode: "prepaid",
   cart: [], // [{name, price, quantity}]
   open: false,
   menu: [], // cached menu items for NL order matching
@@ -34,6 +35,7 @@ export function saveSession() {
         orderType: state.orderType,
         customerName: state.customerName,
         zone: state.zone,
+        paymentMode: state.paymentMode,
         cart: state.cart,
       })
     );
@@ -50,6 +52,10 @@ export function loadSession() {
     state.orderType = data.orderType || null;
     state.customerName = data.customerName || null;
     state.zone = data.zone || null;
+    // Accept both keys so sessions saved by the current bundle and older
+    // bundles restore correctly. The server remains authoritative on a fresh
+    // QR/session resolution.
+    state.paymentMode = data.paymentMode || data.payment_mode || "prepaid";
     // Cart restore policy:
     //   - Token flow: the SERVER is the source of truth (resolveQrToken sets
     //     the cart authoritatively on boot), so DO NOT restore the cache here.

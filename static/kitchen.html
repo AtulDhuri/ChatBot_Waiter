@@ -73,7 +73,6 @@
         cursor: pointer; font-size: 13px; font-weight: 600; color: #fff;
       }
       .b-advance { background: #2e6cf0; }
-      .b-verify { background: #2e9e5b; }
       .b-cancel { background: #6b2230; }
       .actions button:disabled { opacity: .5; cursor: default; }
       .empty { padding: 40px; text-align: center; color: #6b7682; }
@@ -137,11 +136,8 @@
         return document.getElementById("restaurant").value.trim() || "demo";
       }
 
-      // Kitchen flow: New -> Preparing -> Served. We skip the internal "ready"
-      // stage here because the customer only ever sees Paid/Preparing/Served,
-      // so a separate "ready" click would look like nothing happened on their
-      // side. One "Served" click now moves the order straight to served, which
-      // the customer immediately sees as green "Served".
+      // Kitchen flow: New -> Preparing -> Served. The customer sees this as
+      // Placed -> Preparing -> Served. Payment is a separate staff action.
       var NEXT = { new: "preparing", preparing: "served", ready: "served" };
       var NEXT_LABEL = { new: "Start", preparing: "Served", ready: "Served" };
 
@@ -239,9 +235,7 @@
             (o.zone ? "<div class='zone'>Zone: " + esc(o.zone) + "</div>" : "") +
             "<div class='items'>" + items + "</div>" +
             "<div class='meta'>" + o.currency + Number(o.total).toFixed(2) +
-            " · " + mins + " min ago · <span class='pay " +
-            (o.payment_status === "verified" ? "verified" : "unverified") + "'>" +
-            o.payment_status.replace("_", " ") + "</span></div>";
+            " · " + mins + " min ago</div>";
 
           var actions = document.createElement("div");
           actions.className = "actions";
@@ -264,15 +258,6 @@
               lock(adv, patch(o.id, { status: NEXT[o.status] }));
             };
             actions.appendChild(adv);
-          }
-          if (o.payment_status !== "verified") {
-            var ver = document.createElement("button");
-            ver.className = "b-verify";
-            ver.textContent = "Verify ₹";
-            ver.onclick = function () {
-              lock(ver, patch(o.id, { payment_status: "verified" }));
-            };
-            actions.appendChild(ver);
           }
           var cancel = document.createElement("button");
           cancel.className = "b-cancel";

@@ -20,6 +20,7 @@ from app.routes import (
     menu_routes,
     order_routes,
     pay_routes,
+    postpaid_routes,
     qr_routes,
     report_routes,
     session_routes,
@@ -60,6 +61,7 @@ app.include_router(menu_routes.router)
 app.include_router(ask_routes.router)
 app.include_router(bill_routes.router)
 app.include_router(pay_routes.router)
+app.include_router(postpaid_routes.router)
 app.include_router(order_routes.router)
 app.include_router(report_routes.router)
 app.include_router(manager_routes.router)

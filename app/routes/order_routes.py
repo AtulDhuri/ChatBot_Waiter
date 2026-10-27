@@ -28,13 +28,14 @@ from app.schemas import (
     OrderStatusUpdate,
 )
 from app.services import billing, llm, sessions as sess
+from app.services.payment_modes import is_postpaid
 
 
 # Map internal kitchen statuses to the customer-facing label set
-# (Paid -> Preparing -> Served). The customer never sees internal workflow
-# states like "new"/"ready"; those collapse into the three visible stages.
+# (Placed -> Preparing -> Served). Payment is tracked separately and never
+# appears as a kitchen-progress status.
 _CUSTOMER_STATUS = {
-    "new": "Paid",
+    "new": "Placed",
     "preparing": "Preparing",
     "ready": "Preparing",
     "served": "Served",
@@ -43,7 +44,7 @@ _CUSTOMER_STATUS = {
 
 
 def _customer_status(internal: str) -> str:
-    return _CUSTOMER_STATUS.get(internal, "Paid")
+    return _CUSTOMER_STATUS.get(internal, "Placed")
 
 router = APIRouter(tags=["orders"])
 
@@ -107,7 +108,11 @@ async def place_order(
         raise HTTPException(status_code=400, detail="Cart is empty.")
 
     bill = billing.calculate_bill(cart)
-    # Use the order type recorded on the session; the client may also pass it,
+    restaurant = await repo.get_restaurant_by_id(db, row["restaurant_id"])
+    postpaid = is_postpaid((restaurant or {}).get("payment_mode"))
+    # Postpaid orders enter the kitchen immediately and remain unpaid until
+    # the final tab bill is settled. Prepaid keeps the legacy client contract.
+    payment_status = "unpaid" if postpaid else body.payment_status
     # but the session is the source of truth for how the guest started.
     order_type = row.get("order_type") or body.order_type
     customer_name = row.get("customer_name")
@@ -124,7 +129,7 @@ async def place_order(
         tax=bill["tax"],
         total=bill["total"],
         currency=bill["currency"],
-        payment_status=body.payment_status,
+        payment_status=payment_status,
         order_type=order_type,
         customer_name=customer_name,
         # Freeze the zone used for pricing onto the order.
@@ -146,6 +151,7 @@ async def place_order(
         payment_status=order["payment_status"],
         total=bill["total"],
         currency=bill["currency"],
+        items=bill["line_items"],
     )
 
 
@@ -187,10 +193,12 @@ async def my_orders(
             raise
 
     orders = await repo.list_session_orders(db, row["id"])
-    all_served = await repo.session_orders_all_served(db, row["id"])
-    if all_served:
-        # Terminate the session so a new customer at the same table starts
-        # clean and can never see these orders. (Idempotent if already ended.)
+    all_terminal = await repo.session_orders_all_served_and_paid(db, row["id"])
+    restaurant = await repo.get_restaurant_by_id(db, row["restaurant_id"])
+    if all_terminal:
+        await repo.close_session_orders(db, row["id"])
+    # Terminate only after all orders are terminal and payment is verified.
+    # The customer keeps seeing the session's order history until then.
         await repo.end_session(db, row["id"])
 
     return MyOrdersResponse(
@@ -208,7 +216,13 @@ async def my_orders(
             )
             for o in orders
         ],
-        session_ended=all_served,
+        session_ended=all_terminal,
+        payment_mode=((restaurant or {}).get("payment_mode") or "prepaid"),
+        amount_due=sum(
+            float(o["total"])
+            for o in orders
+            if o.get("status") != "cancelled" and o.get("payment_status") != "verified"
+        ),
     )
 
 
@@ -258,15 +272,16 @@ async def update_order(
     if body.payment_status:
         await repo.update_order_payment(db, order_id, body.payment_status)
 
-    # When this order reaches a terminal state, check whether its session is
-    # now fully served/cancelled and, if so, end the session. This ensures a
-    # new customer at the same table cannot inherit the previous session's
-    # orders. Orders placed before session binding existed have no session_id
-    # and are simply skipped.
-    if body.status in ("served", "cancelled"):
+    # A table/session remains visible until every order is terminal and paid.
+    # This applies to both prepaid and postpaid modes.
+    if body.status in ("served", "cancelled") or body.payment_status == "verified":
         sid = existing.get("session_id") if existing else None
-        if sid and await repo.session_orders_all_served(db, sid):
-            await repo.end_session(db, sid)
+        if sid:
+            rest = await repo.get_restaurant_by_id(db, existing["restaurant_id"])
+            can_close = await repo.session_orders_all_served_and_paid(db, sid)
+            if can_close:
+                await repo.close_session_orders(db, sid)
+                await repo.end_session(db, sid)
 
     updated = await repo.get_order(db, order_id)
     return _to_order(updated)

@@ -30,6 +30,7 @@ class SessionInfo(BaseModel):
     restaurant_name: str = ""  # display name (may repeat across outlets)
     zone: Optional[str] = None  # pricing zone resolved from the table
     cart: List["CartItem"] = []
+    payment_mode: str = "prepaid"
 
 
 # ---- QR tokens -----------------------------------------------------------
@@ -55,6 +56,7 @@ class QrSession(BaseModel):
     # True when we continued an existing device session (kept the cart) vs.
     # started a fresh one. Purely informational for the widget.
     continued: bool = False
+    payment_mode: str = "prepaid"
 
 
 class QrTokenRequest(BaseModel):
@@ -184,6 +186,16 @@ class UpiInfo(BaseModel):
     configured: bool
 
 
+class PaymentModeUpdate(BaseModel):
+    restaurant: str = Field(default="demo", max_length=64)
+    payment_mode: str = Field(..., pattern="^(prepaid|postpaid)$")
+
+
+class PaymentModeInfo(BaseModel):
+    restaurant: str
+    payment_mode: str
+
+
 # ---- Orders --------------------------------------------------------------
 
 class OrderCreate(BaseModel):
@@ -232,6 +244,7 @@ class OrderPlaced(BaseModel):
     payment_status: str
     total: float
     currency: str
+    items: List[Dict[str, Any]] = []
 
 
 class MyOrder(BaseModel):
@@ -244,7 +257,7 @@ class MyOrder(BaseModel):
     """
     order_no: str
     order_type: str = "dine_in"
-    status: str  # Paid | Preparing | Served | Cancelled
+    status: str  # Placed | Preparing | Served | Cancelled
     items: List[Dict[str, Any]]
     total: float
     currency: str
@@ -252,17 +265,45 @@ class MyOrder(BaseModel):
 
 
 class MyOrdersResponse(BaseModel):
-    """The customer's view of their current session's orders."""
+    """The customer's view of their current session's orders.
+
+    Every placed order remains visible, with its own items and status, until
+    the session's orders are served/cancelled and their payment is verified.
+    """
     orders: List[MyOrder] = []
     # True once every order in the session is served/cancelled and the session
     # has been ended — the widget uses this to stop polling and show a "thanks,
     # session closed" state so a new guest never inherits these orders.
     session_ended: bool = False
+    payment_mode: str = "prepaid"
+    amount_due: float = 0.0
 
 
 class CloseTableRequest(BaseModel):
     restaurant: str = Field(default="demo", max_length=64)
     table_number: str = Field(..., min_length=1, max_length=16)
+
+
+class PostpaidBillRequest(BaseModel):
+    session_id: str
+
+
+class PostpaidSettleRequest(BaseModel):
+    restaurant: str = Field(default="demo", max_length=64)
+    session_id: str
+    payment_method: str = Field(default="cash", pattern="^(cash|card|upi|other)$")
+
+
+class PostpaidBillResponse(BaseModel):
+    table_number: str
+    line_items: List[Dict[str, Any]]
+    subtotal: float
+    tax: float
+    tax_rate: float = 0.0
+    total: float
+    currency: str
+    payment_mode: str = "postpaid"
+    payment_status: str = "unpaid"
 
 
 class CloseTableResponse(BaseModel):

@@ -8,6 +8,8 @@ import {
   fetchPlaceOrder,
   fetchPay,
   fetchBill,
+  fetchPostpaidBill,
+  fetchPostpaidPay,
   fetchMenu,
   askQuestion,
   parseOrderServer,
@@ -22,10 +24,11 @@ import {
   cartTotal,
   reconcileDropped,
   updateCartBadge,
+  activeCart,
   setActiveCart,
   menuRows,
 } from "./cart.js";
-import { startStatusPolling } from "./status.js";
+import { startStatusPolling, showOrders } from "./status.js";
 import {
   matchDish,
   looksOrderish,
@@ -43,13 +46,19 @@ export function placeOrder(orderType) {
     .then(function (o) {
       state.billNode = null;
       state.billPayBtn = null;
+      if (activeCart && activeCart.card && activeCart.card.parentNode) {
+        activeCart.card.parentNode.removeChild(activeCart.card);
+      }
+      setActiveCart(null);
       clearCart();
       var isTakeaway = o.order_type === "takeaway";
       var card = el("div", { class: "wa-order-card" }, [
         el("div", { class: "wa-order-no" }, ["Order " + o.order_no]),
         el("div", {}, [
           (isTakeaway ? "Takeaway" : "Dine-in") +
-            " · Total paid: " +
+            (state.paymentMode === "postpaid"
+              ? " · Added to open table bill: "
+              : " · Order total: ") +
             money(o.total),
         ]),
         el("div", { class: "wa-mi-desc" }, [
@@ -57,6 +66,14 @@ export function placeOrder(orderType) {
             ? "We'll call your number when it's ready for pickup."
             : "Sent to the kitchen. We'll bring it to your table.",
         ]),
+        el("div", { class: "wa-order-items" },
+          (o.items || []).map(function (item) {
+            return el("div", { class: "wa-order-item" }, [
+              el("span", {}, [String(item.quantity || 1) + "× " + item.name]),
+              el("span", {}, [money(item.line_total || 0)]),
+            ]);
+          })
+        ),
       ]);
       addMessage("✅ Order placed!", "bot");
       addMessage(null, "bot", card);
@@ -74,6 +91,15 @@ export function chooseAndPlaceOrder() {
     return;
   }
   return placeOrder(state.orderType || "dine_in");
+}
+
+export function showOrderOverview() {
+  return showOrders().then(function () {
+    // Keep the current unsubmitted cart accessible after the placed-order
+    // history. The placed orders remain the primary content of this action.
+    if (state.cart.length) showCart();
+    else if (!state.statusNode) addMessage("You have no placed orders yet.", "bot");
+  });
 }
 
 export function menuItemRow(item) {
@@ -353,10 +379,13 @@ export function showCart() {
           {
             class: "wa-btn",
             onclick: function () {
+              if (state.paymentMode === "postpaid") {
+                return chooseAndPlaceOrder();
+              }
               showBill();
             },
           },
-          ["Get bill"]
+          [state.paymentMode === "postpaid" ? "Place order" : "Get bill"]
         ),
         el(
           "button",
@@ -406,11 +435,12 @@ function ensureQrLib() {
 }
 
 export function showPayment() {
-  if (!state.cart.length) {
+  var isPostpaid = state.paymentMode === "postpaid";
+  if (!isPostpaid && !state.cart.length) {
     addMessage("Your order is empty, nothing to pay for yet.", "bot");
     return;
   }
-  fetchPay()
+  (isPostpaid ? fetchPostpaidPay() : fetchPay())
     .then(function (pay) {
       if (reconcileDropped(pay.dropped)) {
         if (!state.cart.length) {
@@ -428,21 +458,26 @@ export function showPayment() {
         var fb = el("div", { class: "wa-pay-card" }, [
           el("div", { class: "wa-pay-amt" }, [money(pay.amount)]),
           el("div", { class: "wa-mi-desc" }, [
-            "Online payment isn't set up yet. Pay at the counter, then place " +
-              "your order.",
+            isPostpaid
+              ? "Online payment isn't set up yet. Please pay this bill at the counter and ask the manager to mark it PAID."
+              : "Online payment isn't set up yet. Pay at the counter, then place your order.",
           ]),
-          el(
-            "button",
-            {
-              class: "wa-btn",
-              style: "margin-top:10px;width:100%",
-              onclick: function () {
-                return chooseAndPlaceOrder();
-              },
-            },
-            ["✅ I've paid — place my order"]
-          ),
         ]);
+        if (!isPostpaid) {
+          fb.appendChild(
+            el(
+              "button",
+              {
+                class: "wa-btn",
+                style: "margin-top:10px;width:100%",
+                onclick: function () {
+                  return chooseAndPlaceOrder();
+                },
+              },
+              ["✅ I've paid — place my order"]
+            )
+          );
+        }
         addMessage(null, "bot", fb);
         return;
       }
@@ -460,24 +495,73 @@ export function showPayment() {
         ["📲 Open in UPI app"]
       );
       card.appendChild(payLink);
+      var openUpi = el(
+        "button",
+        {
+          class: "wa-btn",
+          style: "margin-top:10px;width:100%",
+          onclick: function () {
+            // Assigning the custom scheme directly works in mobile Chrome,
+            // Safari, and embedded browsers where an anchor click is ignored.
+            window.location.href = pay.upi_uri;
+            setTimeout(function () {
+              addMessage(
+                "If no UPI app opened, use the QR code above or copy the payment link below.",
+                "bot"
+              );
+            }, 1200);
+          },
+        },
+        ["📲 Open UPI app"]
+      );
+      card.appendChild(openUpi);
+      var copyUpi = el(
+        "button",
+        {
+          class: "wa-btn secondary",
+          style: "margin-top:8px;width:100%",
+          onclick: function () {
+            var done = function () {
+              addMessage("UPI payment link copied. Open it in a UPI app.", "bot");
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(pay.upi_uri).then(done).catch(function () {
+                addMessage("Could not copy the link. Please use the QR code above.", "bot");
+              });
+            } else {
+              addMessage("Copy is unavailable here. Please use the QR code above.", "bot");
+            }
+          },
+        },
+        ["📋 Copy payment link"]
+      );
+      card.appendChild(copyUpi);
       card.appendChild(
         el("div", { class: "wa-mi-desc" }, [
           "Scan the QR with any UPI app (GPay, PhonePe, Paytm).",
         ])
       );
-      card.appendChild(
-        el(
-          "button",
-          {
-            class: "wa-btn",
-            style: "margin-top:12px;width:100%",
-            onclick: function () {
-              return chooseAndPlaceOrder();
+      if (!isPostpaid) {
+        card.appendChild(
+          el(
+            "button",
+            {
+              class: "wa-btn",
+              style: "margin-top:12px;width:100%",
+              onclick: function () {
+                return chooseAndPlaceOrder();
+              },
             },
-          },
-          ["✅ I've paid — place my order"]
-        )
-      );
+            ["✅ I've paid — place my order"]
+          )
+        );
+      } else {
+        card.appendChild(
+          el("div", { class: "wa-mi-desc" }, [
+            "After paying, ask the manager to mark this bill PAID. Your table closes after all orders are served and paid.",
+          ])
+        );
+      }
 
       addMessage("Scan to pay — the amount is already filled in:", "bot");
       addMessage(null, "bot", card);
@@ -536,6 +620,37 @@ function billHtml(bill) {
 }
 
 export function showBill() {
+  if (state.paymentMode === "postpaid") {
+    return fetchPostpaidBill()
+      .then(function (bill) {
+        var node = el("div", { html: billHtml(bill) });
+        addMessage("Here's your current bill for table " + bill.table_number + ":", "bot");
+        addMessage(null, "bot", node);
+        if (bill.payment_status !== "paid") {
+          var postpaidPayBtn = el(
+            "button",
+            {
+              class: "wa-btn",
+              style: "margin-top:8px;width:100%",
+              onclick: function () {
+                showPayment();
+              },
+            },
+            ["💳 Pay bill " + money(bill.total)]
+          );
+          addMessage(null, "bot", postpaidPayBtn);
+          addMessage(
+            "Your bill is due. Pay online and ask the manager to mark it PAID.",
+            "bot"
+          );
+        } else {
+          addMessage("This bill has already been paid.", "bot");
+        }
+      })
+      .catch(function (e) {
+        addMessage("Couldn't generate the table bill: " + e.message, "bot");
+      });
+  }
   if (!state.cart.length) {
     addMessage("Your cart is empty. Add some items first.", "bot");
     return;
@@ -670,6 +785,9 @@ export function handleSend() {
     return addMessage("Your order has been cancelled.", "bot");
   }
   if (/\b(cart|edit|my items|review)\b/.test(lower)) return showCart();
+  if (/^(my\s+)?order$/.test(lower) || /^(show|view|see)\s+(my\s+)?orders?$/.test(lower)) {
+    return showOrders();
+  }
   if (/\b(pay|upi|scan to pay)\b/.test(lower)) return showPayment();
   if (/\b(bill|check|total)\b/.test(lower)) return showBill();
 

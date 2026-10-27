@@ -94,6 +94,7 @@ async def resolve_qr(
             zone=zone,
             cart=existing.get("cart") or [],
             continued=True,
+            payment_mode=mapping.get("payment_mode") or "prepaid",
         )
 
     # Fresh session bound to this device.
@@ -119,6 +120,7 @@ async def resolve_qr(
         zone=zone,
         cart=[],
         continued=False,
+        payment_mode=mapping.get("payment_mode") or "prepaid",
     )
 
 

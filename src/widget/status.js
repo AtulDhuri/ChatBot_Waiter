@@ -1,22 +1,22 @@
 // Customer order-status tracking. The customer sees ONLY their own session's
 // orders (server-enforced via the session token). Statuses flow
-// Paid -> Preparing -> Served. When the server reports the session ended, we
-// stop polling and wipe the local session.
+// Placed -> Preparing -> Served. Payment is shown separately by staff and
+// does not change the kitchen progress tracker.
 
 import { money } from "./config.js";
-import { state } from "./state.js";
+import { state, ui } from "./state.js";
 import { addMessage, el } from "./dom.js";
 import { getJson } from "./api.js";
 import { endLocalSession } from "./cart.js";
 
 var STATUS_POLL_MS = 6000;
-var STATUS_STEPS = ["Paid", "Preparing", "Served"];
+var STATUS_STEPS = ["Placed", "Preparing", "Served"];
 
 function statusClass(s) {
   return "wa-st-" + String(s || "").toLowerCase();
 }
 
-export function renderStatus(data) {
+export function renderStatus(data, moveToBottom) {
   var orders = (data && data.orders) || [];
   if (!orders.length) return;
 
@@ -42,6 +42,16 @@ export function renderStatus(data) {
     ]);
 
     var row = el("div", { class: "wa-status-row" }, [head]);
+
+    var items = el("div", { class: "wa-status-items" },
+      (o.items || []).map(function (item) {
+        return el("div", { class: "wa-status-item" }, [
+          el("span", {}, [String(item.quantity || 1) + "× " + item.name]),
+          el("span", {}, [money(item.line_total || 0)]),
+        ]);
+      })
+    );
+    if ((o.items || []).length) row.appendChild(items);
 
     if (!isCancelled) {
       var pct =
@@ -88,27 +98,34 @@ export function renderStatus(data) {
   });
 
   if (state.statusNode && state.statusNode.parentNode) {
-    state.statusNode.parentNode.replaceChild(card, state.statusNode);
-    state.statusNode = card;
+    if (moveToBottom && ui.body) {
+      state.statusNode.parentNode.removeChild(state.statusNode);
+      ui.body.appendChild(card);
+    } else {
+      state.statusNode.parentNode.replaceChild(card, state.statusNode);
+    }
   } else {
     addMessage(null, "bot", card);
-    state.statusNode = card;
   }
+  state.statusNode = card;
+  if (moveToBottom && ui.body) ui.body.scrollTop = ui.body.scrollHeight;
 }
 
-export function pollStatusOnce() {
+export function pollStatusOnce(moveToBottom) {
   if (!state.token) return Promise.resolve();
   return getJson(function () {
     return "/my-orders?session_id=" + encodeURIComponent(state.token);
   })
     .then(function (data) {
-      renderStatus(data);
+      renderStatus(data, !!moveToBottom);
       if (data && data.session_ended) {
         stopStatusPolling();
         endLocalSession();
         addMessage(
-          "All your orders have been served. Thanks for dining with us! " +
-            "Scan the QR again to start a new order.",
+          state.paymentMode === "postpaid"
+            ? "Your bill has been paid and the table is now closed. Thanks for dining with us!"
+            : "All your orders have been served. Thanks for dining with us! " +
+              "Scan the QR again to start a new order.",
           "bot"
         );
       }
@@ -116,6 +133,12 @@ export function pollStatusOnce() {
     .catch(function () {
       // Transient error — keep polling; the next tick may succeed.
     });
+}
+
+export function showOrders() {
+  return pollStatusOnce(true).then(function () {
+    if (ui.body) ui.body.scrollTop = ui.body.scrollHeight;
+  });
 }
 
 export function startStatusPolling() {

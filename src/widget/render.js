@@ -5,7 +5,7 @@ import { CONFIG, IS_TOKEN } from "./config.js";
 import { state, ui } from "./state.js";
 import { addMessage, el } from "./dom.js";
 import { startSession, resolveQrToken, askQuestion } from "./api.js";
-import { showMenu, showCart, showBill, handleSend } from "./flows.js";
+import { showMenu, showCart, showOrderOverview, showBill, handleSend } from "./flows.js";
 import {
   syncNowIfVisible,
   refreshPolling,
@@ -112,7 +112,7 @@ export function askIdentifier(orderType) {
 export function renderQuickChips() {
   var chips = el("div", { class: "wa-quick" }, [
     el("button", { class: "wa-chip", onclick: showMenu }, ["📋 View menu"]),
-    el("button", { class: "wa-chip", onclick: showCart }, ["🛒 My order"]),
+    el("button", { class: "wa-chip", onclick: showOrderOverview }, ["🛒 My orders"]),
     el("button", { class: "wa-chip", onclick: showBill }, ["🧾 My bill"]),
     el(
       "button",

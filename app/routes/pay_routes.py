@@ -11,7 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import repository as repo
 from app.routes.deps import get_db, require_staff, resolve_cart, resolve_session
-from app.schemas import PayRequest, PayResponse, UpiInfo, UpiUpdate
+from app.schemas import (
+    PaymentModeInfo,
+    PaymentModeUpdate,
+    PayRequest,
+    PayResponse,
+    UpiInfo,
+    UpiUpdate,
+)
 from app.services import billing, payments
 
 router = APIRouter(prefix="/pay", tags=["pay"])
@@ -53,6 +60,30 @@ async def set_upi(
         upi_vpa=body.upi_vpa,
         upi_name=body.upi_name or None,
         configured=True,
+    )
+
+
+@router.get("/mode", response_model=PaymentModeInfo)
+async def get_payment_mode(
+    restaurant: str = "demo", db: AsyncSession = Depends(get_db)
+):
+    rest = await repo.get_restaurant_by_slug(db, restaurant)
+    mode = (rest or {}).get("payment_mode") or "prepaid"
+    return PaymentModeInfo(restaurant=restaurant, payment_mode=mode)
+
+
+@router.post("/mode", response_model=PaymentModeInfo)
+async def set_payment_mode(
+    body: PaymentModeUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_staff),
+):
+    await repo.get_or_create_restaurant(
+        db, body.restaurant, body.restaurant.replace("-", " ").title()
+    )
+    await repo.set_restaurant_payment_mode(db, body.restaurant, body.payment_mode)
+    return PaymentModeInfo(
+        restaurant=body.restaurant, payment_mode=body.payment_mode
     )
 
 
