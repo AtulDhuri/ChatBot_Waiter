@@ -444,6 +444,11 @@ class MenuItemIn(BaseModel):
     zone_prices: Dict[str, float] = Field(default_factory=dict)
     # Sold-out toggle. Defaults to available.
     available: bool = True
+    # Variants (e.g. portion sizes / protein choices). Not stored as a DB
+    # column but included in the embedded RAG sentence so the chatbot can
+    # describe the options. Each entry is a free-form dict, e.g.:
+    #   [{"label": "Organic", "weight_gms": 217, "calories_kcal": 429}]
+    variants: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TableZoneIn(BaseModel):
@@ -477,6 +482,7 @@ class MenuJsonIn(BaseModel):
     # Optional supported-zone list (informational) and table->zone mappings.
     zones: List[str] = Field(default_factory=list)
     tables: List[TableZoneIn] = Field(default_factory=list)
+    payment_mode: str = Field(default="prepaid", pattern="^(prepaid|postpaid)$")
 
     @model_validator(mode="before")
     @classmethod

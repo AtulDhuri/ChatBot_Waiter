@@ -1,356 +1,2141 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin — Upload Menu</title>
-    <style>
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        background: #faf7f5; color: #222; margin: 0; padding: 40px 16px;
-      }
-      .card {
-        max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px;
-        box-shadow: 0 10px 30px rgba(0,0,0,.08); padding: 28px;
-      }
-      h1 { margin-top: 0; }
-      label { display: block; font-weight: 600; margin: 14px 0 6px; }
-      input[type="text"], input[type="file"] {
-        width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 10px;
-        font-size: 14px;
-      }
-      button {
-        margin-top: 18px; background: #e4572e; color: #fff; border: none;
-        padding: 12px 20px; border-radius: 10px; font-size: 15px; cursor: pointer;
-      }
-      button:disabled { opacity: .6; cursor: default; }
-      .status { margin-top: 16px; font-size: 14px; white-space: pre-wrap; }
-      .ok { color: #2e9e5b; } .err { color: #c0392b; } .warn { color: #c77700; }
-      .muted { color: #777; font-size: 13px; }
-      .navbar {
-        max-width: 520px; margin: 0 auto 14px; display: flex; gap: 10px;
-        flex-wrap: wrap;
-      }
-      .navbar a {
-        flex: 1; min-width: 150px; text-align: center; text-decoration: none;
-        background: #fff; color: #1d2430; border: 1px solid #e4e7ec;
-        border-radius: 12px; padding: 12px; font-size: 14px; font-weight: 600;
-        box-shadow: 0 6px 18px rgba(0,0,0,.05);
-      }
-      .navbar a:hover { border-color: #2e6cf0; color: #2e6cf0; }
-    </style>
-  </head>
-  <body>
-    <div class="navbar">
-      <a id="navManager" href="manager.html">📊 Manager dashboard</a>
-      <a id="navAvail" href="availability.html">🍽️ Dish availability</a>
-    </div>
-    <div class="card">
-      <h1>Upload Menu</h1>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin — Restaurant Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --primary: #e4572e;
+      --secondary: #2e6cf0;
+      --success: #2e9e5b;
+      --warning: #f0a500;
+      --bg: #f4f6fb;
+      --card: #fff;
+      --radius: 16px;
+      --shadow: 0 8px 32px rgba(0,0,0,.10);
+      --border: #e4e7ec;
+      --text: #1d2430;
+      --muted: #6b7280;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 24px 16px 60px;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      max-width: 900px;
+      margin: 0 auto 20px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .navbar a {
+      flex: 1;
+      min-width: 150px;
+      text-align: center;
+      text-decoration: none;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0,0,0,.05);
+      transition: border-color .2s, color .2s;
+    }
+    .navbar a:hover { border-color: var(--secondary); color: var(--secondary); }
+
+    /* ── Page header ── */
+    .page-header {
+      max-width: 900px;
+      margin: 0 auto 28px;
+      text-align: center;
+    }
+    .page-header h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .page-header p { margin: 0; color: var(--muted); font-size: 15px; }
+
+    /* ── Progress stepper ── */
+    .stepper {
+      max-width: 900px;
+      margin: 0 auto 28px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+    .step-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+    .step-item:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      width: 100%;
+      height: 2px;
+      background: var(--border);
+      z-index: 0;
+      transition: background .3s;
+    }
+    .step-item.done:not(:last-child)::after { background: var(--success); }
+    .step-item.active:not(:last-child)::after { background: var(--primary); }
+
+    .step-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 15px;
+      z-index: 1;
+      transition: all .3s;
+      position: relative;
+    }
+    .step-item.active .step-circle {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 0 0 4px rgba(228,87,46,.18);
+    }
+    .step-item.done .step-circle {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+    .step-label {
+      margin-top: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: center;
+      white-space: nowrap;
+    }
+    .step-item.active .step-label { color: var(--primary); }
+    .step-item.done .step-label { color: var(--success); }
+
+    /* ── Card / Step panels ── */
+    .card {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 32px;
+    }
+
+    .step-panel {
+      display: none;
+      animation: fadeUp .3s ease;
+    }
+    .step-panel.active { display: block; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .step-title {
+      margin: 0 0 6px;
+      font-size: 22px;
+      font-weight: 800;
+    }
+    .step-subtitle {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    /* ── Form controls ── */
+    label {
+      display: block;
+      font-weight: 600;
+      font-size: 14px;
+      margin: 0 0 6px;
+      color: var(--text);
+    }
+    input[type="text"],
+    input[type="number"],
+    input[type="file"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--secondary);
+      box-shadow: 0 0 0 3px rgba(46,108,240,.12);
+    }
+    .field { margin-bottom: 18px; }
+    .muted { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .55; cursor: default; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-secondary { background: var(--secondary); color: #fff; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-purple { background: #7a4fd1; color: #fff; }
+    .btn-outline {
+      background: transparent;
+      border: 1.5px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { border-color: var(--secondary); color: var(--secondary); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-danger { background: #e74c3c; color: #fff; }
+
+    /* ── Nav buttons (bottom of card) ── */
+    .step-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      gap: 12px;
+    }
+
+    /* ── Status messages ── */
+    .status { font-size: 14px; white-space: pre-wrap; margin-top: 12px; }
+    .ok   { color: var(--success); }
+    .err  { color: #c0392b; }
+    .warn { color: #c77700; }
+    .inline-err {
+      color: #c0392b;
+      font-size: 13px;
+      margin-top: 6px;
+      display: none;
+    }
+    .inline-err.show { display: block; }
+
+    /* ── Step 2: Zone pills ── */
+    .zone-manager { margin-bottom: 24px; }
+    .zone-manager h3 { margin: 0 0 12px; font-size: 15px; }
+    .zone-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .zone-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .zone-pill .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.5);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .zone-pill .remove-zone {
+      cursor: pointer;
+      opacity: .7;
+      font-size: 14px;
+      line-height: 1;
+      background: none;
+      border: none;
+      color: inherit;
+      padding: 0;
+    }
+    .zone-pill .remove-zone:hover { opacity: 1; }
+    .add-zone-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .add-zone-row input { flex: 1; }
+
+    /* ── Step 2: Add table controls ── */
+    .table-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 600px) {
+      .table-controls { grid-template-columns: 1fr; }
+    }
+    .ctrl-box {
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .ctrl-box h4 { margin: 0 0 12px; font-size: 14px; font-weight: 700; }
+    .ctrl-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      margin-bottom: 10px;
+    }
+    .ctrl-row .field { margin-bottom: 0; flex: 1; }
+
+    /* ── Step 2: Table grid ── */
+    .table-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+      min-height: 80px;
+    }
+    .table-tile {
+      position: relative;
+      border-radius: 16px;
+      padding: 18px 12px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s;
+      user-select: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.2);
+      overflow: visible;
+    }
+    .table-tile::before {
+      content: '🪑';
+      display: block;
+      font-size: 22px;
+      margin-bottom: 6px;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,.25));
+    }
+    .table-tile:hover {
+      transform: translateY(-4px) scale(1.04);
+      box-shadow: 0 12px 28px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.2);
+    }
+    .table-tile:active { transform: translateY(-1px) scale(1.01); }
+    .table-tile .tile-name {
+      font-weight: 800;
+      font-size: 17px;
+      color: #fff;
+      display: block;
+      letter-spacing: .5px;
+      text-shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+    .table-tile .tile-zone {
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,.9);
+      display: block;
+      margin-top: 4px;
+      background: rgba(0,0,0,.18);
+      border-radius: 20px;
+      padding: 2px 8px;
+      letter-spacing: .3px;
+    }
+    .table-tile .tile-del {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: #fff;
+      border: none;
+      color: #e4572e;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      font-size: 12px;
+      line-height: 1;
+      text-align: center;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,.2);
+      opacity: 0;
+      transition: opacity .15s;
+      z-index: 10;
+    }
+    .table-tile:hover .tile-del { opacity: 1; }
+    .table-tile .tile-del:hover { background: #e4572e; color: #fff; }
+
+    /* ── Table edit popover ── */
+    .tile-popover {
+      position: absolute;
+      z-index: 100;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.18);
+      padding: 14px;
+      width: 210px;
+      font-size: 13px;
+    }
+    .tile-popover label { margin-bottom: 4px; font-size: 12px; }
+    .tile-popover input,
+    .tile-popover select { padding: 7px 10px; font-size: 13px; }
+    .tile-popover .pop-row { display: flex; gap: 6px; margin-top: 8px; }
+
+    /* ── Zone legend ── */
+    .zone-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    /* ── Step 3: Upload area ── */
+    .upload-area {
+      border: 2px dashed var(--border);
+      border-radius: 14px;
+      padding: 32px;
+      text-align: center;
+      transition: border-color .2s, background .2s;
+      cursor: pointer;
+    }
+    .upload-area:hover,
+    .upload-area.drag-over {
+      border-color: var(--secondary);
+      background: rgba(46,108,240,.04);
+    }
+    .upload-area input[type="file"] {
+      display: none;
+    }
+    .upload-icon { font-size: 40px; margin-bottom: 10px; }
+    .upload-area p { margin: 6px 0; color: var(--muted); font-size: 14px; }
+
+    /* ── Step 3: Preview table ── */
+    .preview-wrap {
+      overflow-x: auto;
+      margin-top: 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .preview-table th {
+      background: var(--bg);
+      padding: 8px 12px;
+      text-align: left;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .preview-table td {
+      padding: 7px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .preview-table tr:last-child td { border-bottom: none; }
+
+    /* ── Step 5: Summary ── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 600px) { .summary-grid { grid-template-columns: 1fr; } }
+    .summary-box {
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .summary-box h4 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+    }
+    .summary-box p, .summary-box li {
+      margin: 4px 0;
+      font-size: 14px;
+    }
+    .summary-box ul { padding-left: 18px; margin: 4px 0; }
+    .val-errors { margin-top: 16px; }
+    .val-errors .inline-err { display: block; margin-bottom: 4px; font-size: 14px; }
+
+    /* ── Divider ── */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 20px 0;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+
+    /* ── Responsive card padding ── */
+    @media (max-width: 600px) {
+      .card { padding: 20px 16px; }
+      .step-label { display: none; }
+    }
+
+    /* ════════════════════════════════════════════
+       LOADERS & SKELETONS
+    ════════════════════════════════════════════ */
+
+    /* Spinner — inline, inside buttons */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      flex-shrink: 0;
+    }
+    .spinner-dark {
+      border-color: rgba(0,0,0,.15);
+      border-top-color: var(--secondary);
+    }
+    /* Button loading state */
+    .btn.loading { pointer-events: none; opacity: .85; }
+
+    /* Slug-field fetch pulse */
+    @keyframes slugPulse {
+      0%, 100% { border-color: var(--secondary); box-shadow: 0 0 0 3px rgba(46,108,240,.12); }
+      50%       { border-color: var(--primary);  box-shadow: 0 0 0 3px rgba(228,87,46,.14); }
+    }
+    input.fetching { animation: slugPulse .9s ease-in-out infinite; }
+
+    /* Skeleton shimmer */
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position:  600px 0; }
+    }
+    .skeleton {
+      border-radius: 10px;
+      background: linear-gradient(90deg, #ececec 25%, #f8f8f8 50%, #ececec 75%);
+      background-size: 600px 100%;
+      animation: shimmer 1.4s infinite;
+    }
+    /* Skeleton table tile */
+    .skeleton-tile {
+      height: 96px;
+      border-radius: 16px;
+    }
+    /* Skeleton table rows */
+    .skeleton-row {
+      height: 18px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+    }
+    .skeleton-row.short { width: 60%; }
+    .skeleton-row.medium { width: 80%; }
+
+    /* Full-screen submit overlay */
+    .submit-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15,20,30,.55);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .submit-overlay.show { display: flex; }
+    .submit-overlay-card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 36px 48px;
+      text-align: center;
+      box-shadow: 0 24px 64px rgba(0,0,0,.25);
+      min-width: 280px;
+    }
+    .submit-overlay-card .big-spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(228,87,46,.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    .submit-overlay-card h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .submit-overlay-card p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    /* Step-by-step progress dots inside the overlay */
+    .progress-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 20px;
+      text-align: left;
+    }
+    .progress-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      transition: color .3s;
+    }
+    .progress-step.active { color: var(--text); font-weight: 600; }
+    .progress-step.done   { color: var(--success); }
+    .progress-step .ps-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+    .progress-step .ps-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(228,87,46,.25);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ── -->
+<div class="navbar">
+  <a id="navManager" href="manager.html">📊 Manager dashboard</a>
+  <a id="navAvail" href="availability.html">🍽️ Dish availability</a>
+</div>
+
+<!-- ── Page header ── -->
+<div class="page-header">
+  <h1>🍴 Restaurant Setup</h1>
+  <p>Configure your restaurant, tables, menu and payment settings in a few easy steps.</p>
+</div>
+
+<!-- ── Stepper ── -->
+<div class="stepper" id="stepper">
+  <div class="step-item active" data-step="1">
+    <div class="step-circle">1</div>
+    <div class="step-label">🏪 Info</div>
+  </div>
+  <div class="step-item" data-step="2">
+    <div class="step-circle">2</div>
+    <div class="step-label">🪑 Tables</div>
+  </div>
+  <div class="step-item" data-step="3">
+    <div class="step-circle">3</div>
+    <div class="step-label">🍽️ Menu</div>
+  </div>
+  <div class="step-item" data-step="4">
+    <div class="step-circle">4</div>
+    <div class="step-label">💳 Payment</div>
+  </div>
+  <div class="step-item" data-step="5">
+    <div class="step-circle">5</div>
+    <div class="step-label">🚀 Submit</div>
+  </div>
+</div>
+
+<!-- ── Main card ── -->
+<div class="card">
+
+  <!-- ════════════════════ STEP 1 — Restaurant Info ════════════════════ -->
+  <div class="step-panel active" id="panel-1">
+    <h2 class="step-title">🏪 Restaurant Info</h2>
+    <p class="step-subtitle">Set your outlet's unique identifier and display name.</p>
+
+    <div class="field">
+      <label for="restaurant">Restaurant slug <span style="color:#c0392b">*</span></label>
+      <input id="restaurant" type="text" value="demo" placeholder="e.g. pizza-hub-downtown" />
       <p class="muted">
-        Upload your restaurant's menu as a <strong>PDF</strong> or a
-        <strong>JSON</strong> file. We parse it, extract items, and index it for
-        the AI waiter. <strong>To update prices,</strong> re-upload under the
-        same slug — it fully replaces the old menu.
+        Unique ID used in QR codes. For chains use distinct slugs per branch,
+        e.g. <code>pizza-hub-downtown</code>, <code>pizza-hub-airport</code>.
+        Re-uploading under the same slug fully replaces the existing data.
       </p>
+    </div>
 
-      <label for="restaurant">Restaurant slug (unique per outlet)</label>
-      <input id="restaurant" type="text" value="demo" />
-      <p class="muted" style="margin-top:4px">
-        This is the outlet's unique ID and goes in its QR codes. For a chain,
-        use distinct slugs per branch, e.g. <code>pizza-hub-downtown</code>,
-        <code>pizza-hub-airport</code>.
-      </p>
+    <div id="prefillBanner" style="display:none;margin-bottom:16px;background:#edf7f0;border:1px solid #a8dfc0;border-radius:12px;padding:14px 16px;font-size:14px;color:#1a6b3a">
+      <strong>✅ Existing data found</strong> — all fields have been pre-filled from the server. Make changes and re-submit to update.
+    </div>
 
-      <label for="name">Display name (shown to guests, can repeat)</label>
+    <!-- Fetch indicator: pulses on the slug input + shows skeleton hint -->
+    <div id="prefillLoading" style="display:none;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">
+        <span class="spinner spinner-dark"></span>
+        Looking up existing data for this restaurant…
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="name">Display name <span style="color:#c0392b">*</span></label>
       <input id="name" type="text" placeholder="e.g. Pizza Hub" />
+      <p class="muted">Shown to guests in the ordering interface.</p>
+    </div>
 
-      <label for="file">Menu file (PDF or JSON)</label>
-      <input id="file" type="file" accept="application/pdf,application/json,.pdf,.json" />
-      <p class="muted" style="margin-top:4px">
-        JSON may be a flat <code>{"menu": [...]}</code> list or a nested
-        <code>{"categories": [...]}</code> structure.
+    <div id="err-step1" class="inline-err"></div>
+
+    <div class="step-nav">
+      <span></span>
+      <button class="btn btn-primary" onclick="goStep(2)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════ STEP 2 — Table Layout ════════════════════ -->
+  <div class="step-panel" id="panel-2">
+    <h2 class="step-title">🪑 Table Layout</h2>
+    <p class="step-subtitle">Define zones, then add tables individually or in bulk.</p>
+
+    <!-- Zone manager -->
+    <div class="zone-manager">
+      <h3>Dining Zones</h3>
+      <div class="zone-pills" id="zonePills"></div>
+      <div class="add-zone-row">
+        <div class="field" style="margin:0;flex:1">
+          <input id="newZoneName" type="text" placeholder="New zone name (e.g. Rooftop)" />
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="addZone()">+ Add Zone</button>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Single & Bulk add -->
+    <div class="table-controls">
+      <!-- Single -->
+      <div class="ctrl-box">
+        <h4>➕ Add Single Table</h4>
+        <div class="field">
+          <label>Table name</label>
+          <input id="singleName" type="text" placeholder="e.g. T1" />
+        </div>
+        <div class="field">
+          <label>Zone</label>
+          <select id="singleZone"></select>
+        </div>
+        <div id="errSingle" class="inline-err"></div>
+        <button class="btn btn-primary btn-sm" onclick="addSingleTable()">Add Table</button>
+      </div>
+
+      <!-- Bulk -->
+      <div class="ctrl-box">
+        <h4>📦 Bulk Add Tables</h4>
+        <div class="ctrl-row">
+          <div class="field">
+            <label>Prefix</label>
+            <input id="bulkPrefix" type="text" placeholder="T" />
+          </div>
+          <div class="field">
+            <label>Count</label>
+            <input id="bulkCount" type="number" min="1" value="4" />
+          </div>
+          <div class="field">
+            <label>Start #</label>
+            <input id="bulkStart" type="number" min="1" value="1" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Zone</label>
+          <select id="bulkZone"></select>
+        </div>
+        <div id="errBulk" class="inline-err"></div>
+        <button class="btn btn-secondary btn-sm" onclick="bulkAddTables()">Bulk Add</button>
+      </div>
+    </div>
+
+    <!-- Table grid -->
+    <div style="margin-bottom:8px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">
+      Table Grid
+      <span id="tableCount" style="color:var(--muted);font-weight:400;font-size:13px;margin-left:2px"></span>
+      <span id="tableLoadingSpinner" style="display:none"><span class="spinner spinner-dark" style="width:12px;height:12px;border-width:2px"></span></span>
+    </div>
+    <div class="table-grid" id="tableGrid">
+      <p style="color:var(--muted);font-size:13px;grid-column:1/-1">No tables added yet.</p>
+    </div>
+
+    <!-- Legend -->
+    <div class="zone-legend" id="zoneLegend"></div>
+
+    <div id="err-step2" class="inline-err"></div>
+
+    <div class="step-nav">
+      <button class="btn btn-outline" onclick="goStep(1)">&larr; Back</button>
+      <button class="btn btn-primary" onclick="goStep(3)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════ STEP 3 — Menu Upload ════════════════════ -->
+  <div class="step-panel" id="panel-3">
+    <h2 class="step-title">🍽️ Menu Upload</h2>
+    <p class="step-subtitle">Upload your menu as a CSV or Excel file.</p>
+
+    <!-- Menu pre-fill banner (shown when server data was loaded) -->
+    <div id="menuPrefillBanner" style="display:none;margin-bottom:16px;background:#edf7f0;border:1px solid #a8dfc0;border-radius:12px;padding:14px 16px;font-size:14px;color:#1a6b3a">
+      <strong>✅ Menu pre-loaded</strong> — <span id="menuPrefillCount"></span> items loaded from the server. You can re-upload a CSV to replace them, or proceed as-is.
+    </div>
+
+    <!-- Skeleton shown while menu is being fetched from server -->
+    <div id="menuLoadingSkeleton" style="display:none;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-bottom:12px">
+        <span class="spinner spinner-dark"></span> Loading existing menu from server…
+      </div>
+      <div class="skeleton skeleton-row medium"></div>
+      <div class="skeleton skeleton-row"></div>
+      <div class="skeleton skeleton-row short"></div>
+      <div class="skeleton skeleton-row medium" style="margin-top:4px"></div>
+      <div class="skeleton skeleton-row short"></div>
+    </div>
+
+    <!-- CSV template download -->
+    <div style="margin-bottom:20px;background:var(--bg);border-radius:12px;padding:16px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px">📥 CSV Template</div>
+      <p class="muted" style="margin:0 0 10px">
+        Download a ready-to-fill template matching your defined zones. Fill it in Excel or Google Sheets, then upload below.
       </p>
+      <button class="btn btn-outline btn-sm" onclick="downloadCsvTemplate()">⬇ Download CSV Template</button>
+    </div>
 
-      <label for="upi">UPI ID (for payment QR)</label>
+    <!-- File upload -->
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('menuFile').click()">
+      <div class="upload-icon">📂</div>
+      <p><strong>Click to browse</strong> or drag &amp; drop</p>
+      <p>Accepts .csv and .xlsx files</p>
+      <input type="file" id="menuFile" accept=".csv,.xlsx" />
+    </div>
+
+    <div id="menuStatus" class="status" style="margin-top:10px"></div>
+    <div id="menuPreviewWrap" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">
+        <span id="menuPreviewLabel" style="font-weight:700;font-size:14px"></span>
+        <button class="btn btn-outline btn-sm" onclick="clearMenu()">✕ Clear</button>
+      </div>
+      <div class="preview-wrap">
+        <table class="preview-table" id="menuPreviewTable"></table>
+      </div>
+    </div>
+
+    <div id="err-step3" class="inline-err"></div>
+
+    <div class="step-nav">
+      <button class="btn btn-outline" onclick="goStep(2)">&larr; Back</button>
+      <button class="btn btn-primary" onclick="goStep(4)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════ STEP 4 — Payment Settings ════════════════════ -->
+  <div class="step-panel" id="panel-4">
+    <h2 class="step-title">💳 Payment Settings</h2>
+    <p class="step-subtitle">Set up UPI and ordering mode for this restaurant.</p>
+
+    <div id="paymentLoadingBar" style="display:none;margin-bottom:16px;display:none">
+      <div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">
+        <span class="spinner spinner-dark"></span> Loading payment settings…
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="upi">UPI ID</label>
       <input id="upi" type="text" placeholder="e.g. yourname@okbank" />
-      <p class="muted" style="margin-top:4px">
-        Guests pay to this UPI ID. The bill amount is filled in automatically.
-        Leave blank to keep the current one.
-      </p>
+      <p class="muted">Guests pay to this UPI ID. The bill amount is filled in automatically. Leave blank to keep the current one.</p>
+    </div>
 
+    <div class="field">
       <label for="upiName">Payee name shown to guests</label>
       <input id="upiName" type="text" placeholder="e.g. Seaside Grill" />
-
-      <label for="paymentMode">Ordering and payment mode</label>
-      <select id="paymentMode">
-        <option value="prepaid">Prepaid: pay before kitchen order</option>
-        <option value="postpaid">Postpaid: order first, pay final bill</option>
-      </select>
-      <p class="muted" style="margin-top:4px">
-        In postpaid mode, orders go to the kitchen immediately and the table closes only after the final bill is paid.
-      </p>
-
-      <button id="go">Upload &amp; Ingest</button>
-      <button id="saveMode" style="background:#7a4fd1;margin-left:8px">
-        Save payment mode
-      </button>
-      <button id="saveUpi" style="background:#2e9e5b;margin-left:8px">
-        Save UPI only
-      </button>
-      <div id="status" class="status"></div>
     </div>
 
-    <script>
-      // ---- Staff auth ----
-      var TOKEN_KEY = "waiter_staff_token";
-      function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
-      function promptToken(force) {
-        if (!force && getToken()) return;
-        var t = window.prompt("Enter staff access token:", getToken());
-        if (t !== null) localStorage.setItem(TOKEN_KEY, t.trim());
+    <div style="margin-bottom:16px">
+      <button class="btn btn-success" id="saveUpi">💾 Save UPI</button>
+      <div id="upiStatus" class="status" style="display:inline-block;margin-left:12px;vertical-align:middle"></div>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="field">
+      <label for="paymentMode">Ordering and payment mode</label>
+      <select id="paymentMode">
+        <option value="prepaid">Prepaid — pay before kitchen order</option>
+        <option value="postpaid">Postpaid — order first, pay final bill</option>
+      </select>
+      <p class="muted">In postpaid mode, orders go to the kitchen immediately and the table closes only after the final bill is paid.</p>
+    </div>
+
+    <div style="margin-bottom:16px">
+      <button class="btn btn-purple" id="saveMode">💾 Save Payment Mode</button>
+      <div id="modeStatus" class="status" style="display:inline-block;margin-left:12px;vertical-align:middle"></div>
+    </div>
+
+    <div class="step-nav">
+      <button class="btn btn-outline" onclick="goStep(3)">&larr; Back</button>
+      <button class="btn btn-primary" onclick="goStep(5)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════ STEP 5 — Review & Submit ════════════════════ -->
+  <div class="step-panel" id="panel-5">
+    <h2 class="step-title">🚀 Review &amp; Submit</h2>
+    <p class="step-subtitle">Review the summary below and upload when ready.</p>
+
+    <div class="summary-grid" id="summaryGrid"></div>
+
+    <div class="val-errors" id="valErrors"></div>
+
+    <div id="submitStatus" class="status" style="margin-top:16px"></div>
+
+    <div class="step-nav">
+      <button class="btn btn-outline" onclick="goStep(4)">&larr; Back</button>
+      <button class="btn btn-primary" id="submitBtn" onclick="submitAll()" style="font-size:15px;padding:12px 28px">
+        🚀 Upload &amp; Ingest
+      </button>
+    </div>
+  </div>
+
+</div><!-- /card -->
+
+<!-- ════════════════════ SUBMIT OVERLAY ════════════════════ -->
+<div class="submit-overlay" id="submitOverlay">
+  <div class="submit-overlay-card">
+    <div class="big-spinner"></div>
+    <h3>Uploading &amp; Ingesting</h3>
+    <p>Please wait — this can take a moment.</p>
+    <div class="progress-steps" id="overlaySteps">
+      <div class="progress-step" id="ps-menu">
+        <span class="ps-icon">🍽️</span> Processing menu items…
+      </div>
+      <div class="progress-step" id="ps-tables">
+        <span class="ps-icon">🪑</span> Saving table layout…
+      </div>
+      <div class="progress-step" id="ps-embed">
+        <span class="ps-icon">🧠</span> Building AI search index…
+      </div>
+      <div class="progress-step" id="ps-payment">
+        <span class="ps-icon">💳</span> Saving payment settings…
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden colour-picker (reused for zones) -->
+<input type="color" id="hiddenColorPicker" style="display:none;position:fixed;opacity:0;pointer-events:none" />
+
+<script>
+// ══════════════════════════════════════════════════
+//  STAFF AUTH (copied exactly from original)
+// ══════════════════════════════════════════════════
+var TOKEN_KEY = "waiter_staff_token";
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
+function promptToken(force) {
+  if (!force && getToken()) return;
+  var t = window.prompt("Enter staff access token:", getToken());
+  if (t !== null) localStorage.setItem(TOKEN_KEY, t.trim());
+}
+function sfetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers["X-Staff-Token"] = getToken();
+  return fetch(url, opts).then(function(r) {
+    if (r.status === 401) { promptToken(true); throw new Error("Staff auth required"); }
+    return r;
+  });
+}
+promptToken(false);
+
+// ══════════════════════════════════════════════════
+//  APP STATE
+// ══════════════════════════════════════════════════
+var currentStep = 1;
+var ZONE_PALETTE = ["#e4572e","#2e6cf0","#2e9e5b","#f0a500","#9b59b6","#1abc9c","#e74c3c","#3498db"];
+var zones = [
+  { name: "Non-AC",  color: "#2e6cf0" },
+  { name: "AC",      color: "#2e9e5b" },
+  { name: "Outdoor", color: "#f0a500" },
+  { name: "VIP",     color: "#9b59b6" }
+];
+var tables = []; // [{table_number, zone}]
+var menuItems = []; // parsed rows
+
+// ══════════════════════════════════════════════════
+//  STEPPER NAVIGATION
+// ══════════════════════════════════════════════════
+function goStep(n) {
+  if (n > currentStep) {
+    // validate current step before advancing
+    if (!validateStep(currentStep)) return;
+  }
+  currentStep = n;
+  renderStepper();
+  document.querySelectorAll('.step-panel').forEach(function(p) {
+    p.classList.toggle('active', p.id === 'panel-' + n);
+  });
+  // refresh step-specific content
+  if (n === 2) { renderZones(); renderTableGrid(); }
+  if (n === 3) { /* upload area stays as-is */ }
+  if (n === 5) { renderSummary(); }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderStepper() {
+  var items = document.querySelectorAll('.step-item');
+  items.forEach(function(item) {
+    var s = parseInt(item.dataset.step);
+    item.classList.toggle('active', s === currentStep);
+    item.classList.toggle('done', s < currentStep);
+    var circle = item.querySelector('.step-circle');
+    if (s < currentStep) {
+      circle.textContent = '✓';
+    } else {
+      circle.textContent = s;
+    }
+  });
+}
+
+function validateStep(n) {
+  if (n === 1) {
+    var slug = document.getElementById('restaurant').value.trim();
+    var dname = document.getElementById('name').value.trim();
+    var e = document.getElementById('err-step1');
+    if (!slug) { showErr(e, 'Restaurant slug is required.'); return false; }
+    if (!dname) { showErr(e, 'Display name is required.'); return false; }
+    hideErr(e); return true;
+  }
+  if (n === 2) {
+    var e2 = document.getElementById('err-step2');
+    if (tables.length === 0) { showErr(e2, 'Add at least one table before continuing.'); return false; }
+    hideErr(e2); return true;
+  }
+  if (n === 3) {
+    var e3 = document.getElementById('err-step3');
+    if (menuItems.length === 0) { showErr(e3, 'Upload and parse a menu file before continuing.'); return false; }
+    hideErr(e3); return true;
+  }
+  return true;
+}
+
+function showErr(el, msg) { el.textContent = msg; el.classList.add('show'); }
+function hideErr(el) { el.classList.remove('show'); el.textContent = ''; }
+
+// ══════════════════════════════════════════════════
+//  STEP 2 — ZONES
+// ══════════════════════════════════════════════════
+function nextZoneColor() {
+  var used = zones.map(function(z) { return z.color; });
+  for (var i = 0; i < ZONE_PALETTE.length; i++) {
+    if (used.indexOf(ZONE_PALETTE[i]) === -1) return ZONE_PALETTE[i];
+  }
+  return ZONE_PALETTE[zones.length % ZONE_PALETTE.length];
+}
+
+function addZone() {
+  var inp = document.getElementById('newZoneName');
+  var name = inp.value.trim();
+  if (!name) return;
+  if (zones.find(function(z) { return z.name.toLowerCase() === name.toLowerCase(); })) {
+    alert('Zone "' + name + '" already exists.');
+    return;
+  }
+  zones.push({ name: name, color: nextZoneColor() });
+  inp.value = '';
+  renderZones();
+  renderTableGrid();
+}
+
+function removeZone(name) {
+  var usedInTables = tables.some(function(t) { return t.zone === name; });
+  if (usedInTables) {
+    if (!confirm('Zone "' + name + '" is used by tables. Removing it will unassign those tables. Continue?')) return;
+    tables = tables.filter(function(t) { return t.zone !== name; });
+  }
+  zones = zones.filter(function(z) { return z.name !== name; });
+  renderZones();
+  renderTableGrid();
+}
+
+function openColorPicker(zoneName) {
+  var z = zones.find(function(z) { return z.name === zoneName; });
+  if (!z) return;
+  var picker = document.getElementById('hiddenColorPicker');
+  picker.value = z.color;
+  picker.style.display = 'block';
+  picker.style.pointerEvents = 'auto';
+  picker.click();
+  function onChange() {
+    z.color = picker.value;
+    renderZones();
+    renderTableGrid();
+    picker.removeEventListener('input', onChange);
+    picker.removeEventListener('change', done);
+  }
+  function done() {
+    z.color = picker.value;
+    renderZones();
+    renderTableGrid();
+  }
+  picker.addEventListener('input', onChange);
+  picker.addEventListener('change', done);
+}
+
+function renderZones() {
+  // Pills
+  var pillsEl = document.getElementById('zonePills');
+  if (zones.length === 0) {
+    pillsEl.innerHTML = '<span style="color:var(--muted);font-size:13px">No zones defined. Add one above.</span>';
+  } else {
+    pillsEl.innerHTML = zones.map(function(z) {
+      return '<span class="zone-pill" style="background:' + z.color + '">' +
+        '<span class="swatch" style="background:' + z.color + ';filter:brightness(1.3)" onclick="openColorPicker(\'' + esc(z.name) + '\')" title="Change colour"></span>' +
+        '<span>' + esc(z.name) + '</span>' +
+        '<button class="remove-zone" onclick="removeZone(\'' + esc(z.name) + '\')" title="Remove zone">✕</button>' +
+      '</span>';
+    }).join('');
+  }
+
+  // Populate zone dropdowns
+  var zoneOpts = zones.map(function(z) {
+    return '<option value="' + esc(z.name) + '">' + esc(z.name) + '</option>';
+  }).join('');
+  ['singleZone','bulkZone'].forEach(function(id) {
+    document.getElementById(id).innerHTML = zoneOpts ||
+      '<option value="">— No zones —</option>';
+  });
+
+  // Legend
+  var legendEl = document.getElementById('zoneLegend');
+  legendEl.innerHTML = zones.map(function(z) {
+    return '<span class="legend-item">' +
+      '<span class="legend-swatch" style="background:' + z.color + '"></span>' +
+      esc(z.name) +
+    '</span>';
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════
+//  STEP 2 — TABLES
+// ══════════════════════════════════════════════════
+function tableExists(name) {
+  return tables.some(function(t) { return t.table_number === name; });
+}
+
+function addSingleTable() {
+  var name = document.getElementById('singleName').value.trim();
+  var zone = document.getElementById('singleZone').value;
+  var errEl = document.getElementById('errSingle');
+  if (!name) { showErr(errEl, 'Enter a table name.'); return; }
+  if (!zone) { showErr(errEl, 'Select a zone.'); return; }
+  if (tableExists(name)) { showErr(errEl, 'Table "' + name + '" already exists.'); return; }
+  hideErr(errEl);
+  tables.push({ table_number: name, zone: zone });
+  document.getElementById('singleName').value = '';
+  renderTableGrid();
+}
+
+function bulkAddTables() {
+  var prefix = document.getElementById('bulkPrefix').value;
+  var count  = parseInt(document.getElementById('bulkCount').value) || 0;
+  var start  = parseInt(document.getElementById('bulkStart').value) || 1;
+  var zone   = document.getElementById('bulkZone').value;
+  var errEl  = document.getElementById('errBulk');
+  if (!zone) { showErr(errEl, 'Select a zone.'); return; }
+  if (count < 1) { showErr(errEl, 'Count must be at least 1.'); return; }
+  hideErr(errEl);
+  var added = 0, dupes = [];
+  for (var i = 0; i < count; i++) {
+    var tname = prefix + (start + i);
+    if (tableExists(tname)) { dupes.push(tname); continue; }
+    tables.push({ table_number: tname, zone: zone });
+    added++;
+  }
+  if (dupes.length) showErr(errEl, 'Skipped duplicates: ' + dupes.join(', '));
+  renderTableGrid();
+}
+
+function deleteTable(name) {
+  tables = tables.filter(function(t) { return t.table_number !== name; });
+  renderTableGrid();
+}
+
+var openPopoverFor = null; // table_number or null
+
+function renderTableGrid() {
+  var grid = document.getElementById('tableGrid');
+  document.getElementById('tableCount').textContent =
+    tables.length ? '(' + tables.length + ' tables)' : '';
+
+  if (tables.length === 0) {
+    grid.innerHTML = '<p style="color:var(--muted);font-size:13px;grid-column:1/-1">No tables added yet.</p>';
+    return;
+  }
+
+  grid.innerHTML = tables.map(function(t) {
+    var z = zones.find(function(z) { return z.name === t.zone; });
+    var bg = z ? z.color : '#aaa';
+    return '<div class="table-tile" style="background:' + bg + '" ' +
+      'onclick="openTilePopover(\'' + esc(t.table_number) + '\', event)" ' +
+      'id="tile-' + esc(t.table_number) + '">' +
+      '<button class="tile-del" onclick="event.stopPropagation();deleteTable(\'' + esc(t.table_number) + '\')">✕</button>' +
+      '<span class="tile-name">' + esc(t.table_number) + '</span>' +
+      '<span class="tile-zone">' + esc(t.zone) + '</span>' +
+    '</div>';
+  }).join('');
+
+  renderZoneLegend();
+}
+
+function renderZoneLegend() {
+  var legendEl = document.getElementById('zoneLegend');
+  legendEl.innerHTML = zones.map(function(z) {
+    var cnt = tables.filter(function(t) { return t.zone === z.name; }).length;
+    return '<span class="legend-item">' +
+      '<span class="legend-swatch" style="background:' + z.color + '"></span>' +
+      esc(z.name) + ' (' + cnt + ')' +
+    '</span>';
+  }).join('');
+}
+
+function openTilePopover(tableName, evt) {
+  // Remove any existing popover
+  var existing = document.getElementById('tilePopover');
+  if (existing) existing.remove();
+  if (openPopoverFor === tableName) { openPopoverFor = null; return; }
+  openPopoverFor = tableName;
+
+  var t = tables.find(function(t) { return t.table_number === tableName; });
+  if (!t) return;
+
+  var zoneOpts = zones.map(function(z) {
+    return '<option value="' + esc(z.name) + '"' + (z.name === t.zone ? ' selected' : '') + '>' + esc(z.name) + '</option>';
+  }).join('');
+
+  var pop = document.createElement('div');
+  pop.className = 'tile-popover';
+  pop.id = 'tilePopover';
+  pop.innerHTML =
+    '<label>Table name</label>' +
+    '<input id="popName" type="text" value="' + esc(tableName) + '" style="margin-bottom:8px" />' +
+    '<label>Zone</label>' +
+    '<select id="popZone">' + zoneOpts + '</select>' +
+    '<div class="pop-row">' +
+      '<button class="btn btn-primary btn-sm" onclick="saveTileEdit(\'' + esc(tableName) + '\')">Save</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="closeTilePopover()">Cancel</button>' +
+    '</div>';
+
+  // Position near tile
+  var tile = document.getElementById('tile-' + tableName);
+  if (tile) {
+    tile.style.position = 'relative';
+    tile.appendChild(pop);
+  }
+
+  evt.stopPropagation();
+}
+
+function saveTileEdit(oldName) {
+  var newName = document.getElementById('popName').value.trim();
+  var newZone = document.getElementById('popZone').value;
+  if (!newName) { alert('Table name cannot be empty.'); return; }
+  if (newName !== oldName && tableExists(newName)) {
+    alert('Table "' + newName + '" already exists.'); return;
+  }
+  var t = tables.find(function(t) { return t.table_number === oldName; });
+  if (t) { t.table_number = newName; t.zone = newZone; }
+  closeTilePopover();
+  renderTableGrid();
+}
+
+function closeTilePopover() {
+  var p = document.getElementById('tilePopover');
+  if (p) p.remove();
+  openPopoverFor = null;
+}
+
+document.addEventListener('click', function(e) {
+  var pop = document.getElementById('tilePopover');
+  if (pop && !pop.contains(e.target)) closeTilePopover();
+});
+
+// ══════════════════════════════════════════════════
+//  STEP 3 — MENU UPLOAD
+// ══════════════════════════════════════════════════
+// Drag & drop
+(function() {
+  var area = document.getElementById('uploadArea');
+  area.addEventListener('dragover', function(e) { e.preventDefault(); area.classList.add('drag-over'); });
+  area.addEventListener('dragleave', function() { area.classList.remove('drag-over'); });
+  area.addEventListener('drop', function(e) {
+    e.preventDefault();
+    area.classList.remove('drag-over');
+    var file = e.dataTransfer.files[0];
+    if (file) handleMenuFile(file);
+  });
+})();
+
+document.getElementById('menuFile').addEventListener('change', function() {
+  if (this.files[0]) handleMenuFile(this.files[0]);
+});
+
+function clearMenu() {
+  menuItems = [];
+  document.getElementById('menuFile').value = '';
+  document.getElementById('menuPreviewWrap').style.display = 'none';
+  document.getElementById('menuStatus').textContent = '';
+  document.getElementById('menuStatus').className = 'status';
+}
+
+function handleMenuFile(file) {
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  var isCsv  = /\.csv$/i.test(file.name);
+  var statusEl = document.getElementById('menuStatus');
+  statusEl.className = 'status';
+  statusEl.textContent = 'Parsing file…';
+
+  if (isXlsx) {
+    if (typeof XLSX === 'undefined') {
+      var script = document.createElement('script');
+      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+      script.onload = function() { parseXlsx(file); };
+      script.onerror = function() {
+        statusEl.className = 'status err';
+        statusEl.textContent = 'Failed to load SheetJS. Check your internet connection.';
+      };
+      document.head.appendChild(script);
+    } else {
+      parseXlsx(file);
+    }
+  } else if (isCsv) {
+    var reader = new FileReader();
+    reader.onload = function(e) { parseCsvText(e.target.result); };
+    reader.readAsText(file);
+  } else {
+    statusEl.className = 'status err';
+    statusEl.textContent = 'Unsupported file type. Please upload a .csv or .xlsx file.';
+  }
+}
+
+function parseXlsx(file) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(e.target.result, { type: 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var csv = XLSX.utils.sheet_to_csv(ws);
+      parseCsvText(csv);
+    } catch(ex) {
+      var statusEl = document.getElementById('menuStatus');
+      statusEl.className = 'status err';
+      statusEl.textContent = 'Failed to parse Excel: ' + ex.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Robust CSV parser: handles quoted fields, quoted newlines, quoted commas
+function parseCSV(text) {
+  var rows = [];
+  var row = [];
+  var field = '';
+  var inQuotes = false;
+  var i = 0;
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  while (i < text.length) {
+    var c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i+1] === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
       }
-      function sfetch(url, opts) {
-        opts = opts || {};
-        opts.headers = opts.headers || {};
-        opts.headers["X-Staff-Token"] = getToken();
-        return fetch(url, opts).then(function (r) {
-          if (r.status === 401) { promptToken(true); throw new Error("Staff auth required"); }
-          return r;
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQuotes = true; i++; continue; }
+    if (c === ',') { row.push(field); field = ''; i++; continue; }
+    if (c === '\n') {
+      row.push(field); field = '';
+      rows.push(row); row = [];
+      i++; continue;
+    }
+    field += c; i++;
+  }
+  row.push(field);
+  if (row.some(function(f) { return f !== ''; })) rows.push(row);
+  return rows;
+}
+
+function parseCsvText(text) {
+  var statusEl = document.getElementById('menuStatus');
+  try {
+    var rawRows = parseCSV(text);
+    if (rawRows.length < 2) {
+      statusEl.className = 'status warn';
+      statusEl.textContent = 'File appears empty or has only a header row.';
+      return;
+    }
+
+    // Find header row (skip # comment rows)
+    var headerIdx = -1;
+    for (var i = 0; i < rawRows.length; i++) {
+      var first = (rawRows[i][0] || '').trim();
+      if (first && first[0] !== '#') { headerIdx = i; break; }
+    }
+    if (headerIdx < 0) {
+      statusEl.className = 'status err';
+      statusEl.textContent = 'Could not find a header row.';
+      return;
+    }
+
+    var headers = rawRows[headerIdx].map(function(h) { return h.trim().toLowerCase(); });
+    var dataRows = rawRows.slice(headerIdx + 1).filter(function(row) {
+      var first = (row[0] || '').trim();
+      return first && first[0] !== '#';
+    });
+
+    // Warn about missing required columns
+    var required = ['category','name','price'];
+    var missing = required.filter(function(c) { return headers.indexOf(c) === -1; });
+    if (missing.length) {
+      statusEl.className = 'status warn';
+      statusEl.textContent = '⚠ Missing columns: ' + missing.join(', ') + '. Some data may not import correctly.';
+    } else {
+      statusEl.className = 'status ok';
+      statusEl.textContent = '';
+    }
+
+    // Parse rows into objects
+    var items = [];
+    dataRows.forEach(function(row) {
+      if (row.length < headers.length && row.every(function(c) { return !c.trim(); })) return;
+      var obj = {};
+      headers.forEach(function(h, idx) {
+        obj[h] = (row[idx] || '').trim();
+      });
+
+      var category = obj['category'] || '';
+      var name     = obj['name'] || '';
+      var price    = parseFloat(obj['price']) || 0;
+      if (!category || !name) return;
+
+      var item = {
+        _category: category,
+        name: name,
+        description: obj['description'] || null,
+        weight_gms: obj['weight_gms'] ? (parseFloat(obj['weight_gms']) || null) : null,
+        calories_kcal: obj['calories_kcal'] ? (parseFloat(obj['calories_kcal']) || null) : null,
+        price: price,
+        zone_prices: {},
+        available: true,
+        variants: []
+      };
+
+      // available
+      var avRaw = (obj['available'] || '').toLowerCase();
+      item.available = avRaw === '' || avRaw === 'true' || avRaw === '1' || avRaw === 'yes';
+
+      // zone prices
+      zones.forEach(function(z) {
+        var key = 'zone_' + z.name.toLowerCase().replace(/\s+/g,'_');
+        // also try exact zone name as key
+        var key2 = 'zone_' + z.name.toLowerCase();
+        var raw = obj[key] || obj[key2] || '';
+        item.zone_prices[z.name] = raw ? (parseFloat(raw) || price) : price;
+      });
+
+      // variants
+      var varStr = obj['variants'] || '';
+      if (varStr) {
+        try { item.variants = JSON.parse(varStr); }
+        catch(e) { item.variants = []; }
+      }
+
+      if (!item.description) item.description = null;
+      if (item.variants && item.variants.length === 0) delete item.variants;
+
+      items.push(item);
+    });
+
+    menuItems = items;
+    renderMenuPreview(headers, dataRows);
+
+    var msg = '✓ Parsed ' + items.length + ' menu items.';
+    if (statusEl.className.indexOf('warn') === -1) {
+      statusEl.className = 'status ok';
+      statusEl.textContent = msg;
+    } else {
+      statusEl.textContent += '  ' + msg;
+    }
+  } catch(ex) {
+    statusEl.className = 'status err';
+    statusEl.textContent = 'Parse error: ' + ex.message;
+  }
+}
+
+function renderMenuPreview(headers, dataRows) {
+  var wrap = document.getElementById('menuPreviewWrap');
+  var label = document.getElementById('menuPreviewLabel');
+  var tbl = document.getElementById('menuPreviewTable');
+  wrap.style.display = 'block';
+
+  var previewRows = dataRows.slice(0, 10);
+  label.textContent = 'Preview (first ' + previewRows.length + ' of ' + dataRows.length + ' rows)';
+
+  var thead = '<thead><tr>' +
+    headers.map(function(h) { return '<th>' + esc(h) + '</th>'; }).join('') +
+  '</tr></thead>';
+
+  var tbody = '<tbody>' +
+    previewRows.map(function(row) {
+      return '<tr>' + headers.map(function(h, i) {
+        return '<td title="' + esc(row[i] || '') + '">' + esc((row[i] || '').substring(0,30)) + '</td>';
+      }).join('') + '</tr>';
+    }).join('') +
+  '</tbody>';
+
+  tbl.innerHTML = thead + tbody;
+}
+
+// ── CSV Template Download ──
+function downloadCsvTemplate() {
+  var zoneCols = zones.map(function(z) { return 'zone_' + z.name; });
+  var headers = ['category','name','description','weight_gms','calories_kcal','price']
+    .concat(zoneCols).concat(['available','variants']);
+
+  // ── Sample data: all categories and items from the reference menu ──
+  var sampleData = [
+    // All Day Breakfast
+    {cat:'All Day Breakfast',name:'Thatte Idli',desc:'Sambhar, gun powder, coconut chutney',wt:391,cal:385.57,price:1200,zones:{'Non-AC':1200,'AC':1320,'Outdoor':1260,'VIP':1500},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Bedmi Puri Raseele Aloo',desc:'Lentil stuffed fried bread, potato curry, fennel chutney',wt:487,cal:952.57,price:1200,zones:{'Non-AC':1200,'AC':1320,'Outdoor':1260,'VIP':1500},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Aloo Paratha',desc:'White butter, set curd, panchranga pickle',wt:336,cal:626.3,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Mascarpone Pancakes',desc:'Mascarpone whipped cream, maple syrup',wt:306,cal:585.07,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Bean Sprout & Roasted Beetroot Poha',desc:'Beaten rice, Sriracha peanuts, spices',wt:344,cal:850.71,price:1400,zones:{'Non-AC':1400,'AC':1540,'Outdoor':1470,'VIP':1750},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Accompaniments',desc:'Crispy bacon, sausages, hash brown, mushroom',wt:'',cal:'',price:850,zones:{'Non-AC':850,'AC':940,'Outdoor':890,'VIP':1060},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Eggs to Order',desc:'Organic or local chicken eggs',wt:'',cal:'',price:1100,zones:{'Non-AC':1100,'AC':1210,'Outdoor':1160,'VIP':1380},avail:true,variants:'[{"label":"Organic","weight_gms":217,"calories_kcal":429.1},{"label":"Local","weight_gms":101,"calories_kcal":297.95}]'},
+    {cat:'All Day Breakfast',name:'Mediterranean Omelette',desc:'Feta, olives, tomatoes, spinach',wt:275,cal:441.1,price:1100,zones:{'Non-AC':1100,'AC':1210,'Outdoor':1160,'VIP':1380},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Shamiana Bread Omelette',desc:'Bread, cheese, mint chutney, ketchup, potato chips',wt:310,cal:520.49,price:1100,zones:{'Non-AC':1100,'AC':1210,'Outdoor':1160,'VIP':1380},avail:true,variants:''},
+    {cat:'All Day Breakfast',name:'Brûlée French Toast',desc:'Maple syrup, powdered sugar',wt:180,cal:515.52,price:1600,zones:{'Non-AC':1600,'AC':1760,'Outdoor':1680,'VIP':2000},avail:true,variants:''},
+    // Sharing Plates & Starters
+    {cat:'Sharing Plates & Starters',name:'Vietnamese Pho',desc:'Vegetable broth, rice noodle, lime, sprouts, scallion, chilli, hoisin',wt:355,cal:342.15,price:1000,zones:{'Non-AC':1000,'AC':1100,'Outdoor':1050,'VIP':1250},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Jimikand aur Shinghade Ke Kebab',desc:'Spiced yam, water chestnut, walnut chutney',wt:263,cal:296.4,price:1100,zones:{'Non-AC':1100,'AC':1210,'Outdoor':1160,'VIP':1380},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Jaitooni Pudina Paneer Tikka',desc:'Pepitas, raisin chaat, tomato chutney',wt:353,cal:517.15,price:1100,zones:{'Non-AC':1100,'AC':1210,'Outdoor':1160,'VIP':1380},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Spanish Socca',desc:'Chickpea, caramelized onion, olives, jalapeno, sour cream',wt:284,cal:701.39,price:1200,zones:{'Non-AC':1200,'AC':1320,'Outdoor':1260,'VIP':1500},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Buddha Bowl',desc:'Quinoa, chickpeas, edamame, hummus, chipotle aioli',wt:308,cal:516.21,price:1400,zones:{'Non-AC':1400,'AC':1540,'Outdoor':1470,'VIP':1750},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:"Memsahib's Chicken Broth",desc:'Poee bread',wt:316,cal:531.83,price:1000,zones:{'Non-AC':1000,'AC':1100,'Outdoor':1050,'VIP':1250},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Tortilla Four Ways',desc:'Refried beans, cucumber, guacamole, jalapeno potatoes',wt:433,cal:'',price:1200,zones:{'Non-AC':1200,'AC':1320,'Outdoor':1260,'VIP':1500},avail:true,variants:'[{"label":"Vegetarian","calories_kcal":647.34,"price":1200},{"label":"With chicken sausages","calories_kcal":823.33,"price":1400}]'},
+    {cat:'Sharing Plates & Starters',name:'Paneer/Chicken Wrap',desc:'Green apple relish',wt:'',cal:'',price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:'[{"label":"Paneer","weight_gms":417,"calories_kcal":824.16},{"label":"Chicken","weight_gms":487,"calories_kcal":1031.42}]'},
+    {cat:'Sharing Plates & Starters',name:'Chicken Kare Pan',desc:'Curried chicken bun, pickled vegetables, tonkatsu sauce',wt:405,cal:1890.58,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Ajwaini Chicken Tikka',desc:'Smoked fruit chaat, mint chutney',wt:307,cal:265.95,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Bohri Samosa',desc:'Smoked mutton mince, mint chutney',wt:192,cal:409.34,price:1750,zones:{'Non-AC':1750,'AC':1930,'Outdoor':1840,'VIP':2190},avail:true,variants:''},
+    {cat:'Sharing Plates & Starters',name:'Kasundi Salmon Tikka',desc:'Quinoa sprouts salad, cashew curry leaf chutney',wt:346,cal:455.68,price:1950,zones:{'Non-AC':1950,'AC':2140,'Outdoor':2050,'VIP':2440},avail:true,variants:''},
+    // Parsi Specials
+    {cat:'Parsi Specials',name:'Masala ni Dar',desc:'Parsi style masala dal',wt:342,cal:519.5,price:1150,zones:{'Non-AC':1150,'AC':1260,'Outdoor':1210,'VIP':1440},avail:true,variants:''},
+    {cat:'Parsi Specials',name:'Patra ma Paneer',desc:'Steamed cottage cheese in banana leaves',wt:367,cal:736.63,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Parsi Specials',name:'Lagansara Vegetable Stew',desc:'Sweet, sour, dry vegetable stew',wt:328,cal:596.63,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Parsi Specials',name:'Jardaloo Salli Boti',desc:'Lamb in sweet-sour gravy, straw potatoes',wt:388,cal:465.21,price:2250,zones:{'Non-AC':2250,'AC':2480,'Outdoor':2360,'VIP':2810},avail:true,variants:''},
+    {cat:'Parsi Specials',name:'Patra Ni Machi',desc:'Steamed pomfret in banana leaves',wt:335,cal:824.64,price:2650,zones:{'Non-AC':2650,'AC':2920,'Outdoor':2780,'VIP':3310},avail:true,variants:''},
+    {cat:'Parsi Specials',name:'Parsi Pulao with Lamb Kebab',desc:'',wt:670,cal:1028.25,price:2950,zones:{'Non-AC':2950,'AC':3250,'Outdoor':3100,'VIP':3690},avail:true,variants:''},
+    // Nostalgic Shamiana
+    {cat:'Nostalgic Shamiana',name:'Pav Bhaji',desc:'Spicy mashed potato & vegetables, buttered pav',wt:387,cal:391.33,price:1050,zones:{'Non-AC':1050,'AC':1160,'Outdoor':1100,'VIP':1310},avail:true,variants:''},
+    {cat:'Nostalgic Shamiana',name:'Ragda Pattice',desc:'Potato pattice, dried peas stew',wt:370,cal:738.78,price:1150,zones:{'Non-AC':1150,'AC':1260,'Outdoor':1210,'VIP':1440},avail:true,variants:''},
+    {cat:'Nostalgic Shamiana',name:'Asparagus Roesti',desc:'Potato roesti, creamed asparagus, Gruyere',wt:304,cal:646.61,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Nostalgic Shamiana',name:'Chicken Tikka Sandwich',desc:'',wt:374,cal:1857.55,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Nostalgic Shamiana',name:'Kheema Mutter',desc:'Minced lamb, peas, buttered pav',wt:369,cal:1820.17,price:1550,zones:{'Non-AC':1550,'AC':1710,'Outdoor':1630,'VIP':1940},avail:true,variants:''},
+    {cat:'Nostalgic Shamiana',name:'Goan Pomfret Curry',desc:'Coconut curry, basmati rice',wt:688,cal:771.52,price:2400,zones:{'Non-AC':2400,'AC':2640,'Outdoor':2520,'VIP':3000},avail:true,variants:''},
+    // Comfort Mains
+    {cat:'Comfort Mains',name:'Chonka Mutter Palak',desc:'Spinach, peas',wt:612,cal:852.52,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Paneer Butter Masala',desc:'Cottage cheese in tomato gravy',wt:632,cal:650.33,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Malai Kofta',desc:'Milk dumpling, saffron gravy',wt:653,cal:1244.42,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Rajma Chawal',desc:'Kidney beans stew, rice',wt:688,cal:663.37,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Bombay Tawa Pulao',desc:'Spicy rice, vegetables, raita',wt:566,cal:598.26,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Millet Khichdi',desc:'Mung bean, pearl millet, curd',wt:457,cal:1709.18,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Chole Kulche',desc:'Chickpeas, leavened bread',wt:610,cal:1284.29,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Pakode wali Kadhi',desc:'Rice, papad chura',wt:568,cal:1016.72,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Risotto Amarillo',desc:'Rice, chilli, corn, arugula, cheese',wt:371,cal:517.17,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Mac n Cheese',desc:'Double cheese sauce, baked',wt:247,cal:408.54,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Orecchiette',desc:'Pasta, celeriac cream, basil oil',wt:321,cal:1288.43,price:1650,zones:{'Non-AC':1650,'AC':1820,'Outdoor':1730,'VIP':2060},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Yellow Thai Curry',desc:'',wt:'',cal:'',price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:'[{"label":"Vegetables","weight_gms":624,"calories_kcal":793.45},{"label":"Chicken","weight_gms":757,"calories_kcal":950.64}]'},
+    {cat:'Comfort Mains',name:'Slow Roast Chicken',desc:'Root vegetables, mushrooms, rosemary jus',wt:363,cal:630.31,price:1550,zones:{'Non-AC':1550,'AC':1710,'Outdoor':1630,'VIP':1940},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Murgh Makhanwala',desc:'Chicken in tomato cashew gravy',wt:513,cal:779.25,price:1650,zones:{'Non-AC':1650,'AC':1820,'Outdoor':1730,'VIP':2060},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Qalia Mutton',desc:'Lamb curry, naan',wt:691,cal:771.85,price:1750,zones:{'Non-AC':1750,'AC':1930,'Outdoor':1840,'VIP':2190},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Gosht Pulao',desc:'Mutton pulao, raita',wt:660,cal:1062.14,price:1750,zones:{'Non-AC':1750,'AC':1930,'Outdoor':1840,'VIP':2190},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Cajun Fish n Chips',desc:'Cornmeal batter, fries, aioli',wt:365,cal:381.39,price:1750,zones:{'Non-AC':1750,'AC':1930,'Outdoor':1840,'VIP':2190},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Pollo Guisado',desc:'Puerto Rican chicken, parsnip stew',wt:236,cal:246.86,price:1850,zones:{'Non-AC':1850,'AC':2040,'Outdoor':1940,'VIP':2310},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Lumachine',desc:'Pasta, lamb ragout, parmesan',wt:339,cal:1190.91,price:1950,zones:{'Non-AC':1950,'AC':2140,'Outdoor':2050,'VIP':2440},avail:true,variants:''},
+    {cat:'Comfort Mains',name:'Duck Adobo',desc:'Chilli peppers, jasmine rice, pakchoy',wt:285,cal:422.37,price:2800,zones:{'Non-AC':2800,'AC':3080,'Outdoor':2940,'VIP':3500},avail:false,variants:''},
+    // International Grills
+    {cat:'International Grills',name:'Yaki Onigiri with Grilled Tofu & Pineapple',desc:'Smoked paprika, miso butter',wt:374,cal:607.64,price:1250,zones:{'Non-AC':1250,'AC':1380,'Outdoor':1310,'VIP':1560},avail:true,variants:''},
+    {cat:'International Grills',name:'Grilled Vegetable Skillet',desc:'Sweet potatoes, corn, eggplant, fondue sauce',wt:307,cal:148.56,price:1750,zones:{'Non-AC':1750,'AC':1930,'Outdoor':1840,'VIP':2190},avail:true,variants:''},
+    {cat:'International Grills',name:'Herb & Lime Rubbed Salmon',desc:'Tomato salad, pickle',wt:202,cal:496.27,price:2950,zones:{'Non-AC':2950,'AC':3250,'Outdoor':3100,'VIP':3690},avail:true,variants:''},
+    {cat:'International Grills',name:'Lamb Chops',desc:'Green beans, saffron potato salad',wt:349,cal:1087.83,price:2950,zones:{'Non-AC':2950,'AC':3250,'Outdoor':3100,'VIP':3690},avail:true,variants:''},
+    {cat:'International Grills',name:'Pork Belly',desc:'Green beans, saffron potato salad',wt:354,cal:1058.21,price:2600,zones:{'Non-AC':2600,'AC':2860,'Outdoor':2730,'VIP':3250},avail:true,variants:''},
+    // Desserts
+    {cat:'Desserts',name:'Brownie Sundae',desc:'Waffle cup, butterscotch ice cream, hot chocolate brownie, almond brittle',wt:262,cal:818.1,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Desserts',name:'Basque Cheese Cake',desc:'Spanish cheesecake, cherry compote, vanilla Chantilly cream',wt:149,cal:462.97,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Desserts',name:'Tiramisu',desc:'Kahlua-soaked ladyfinger biscuit, mascarpone cheese',wt:225,cal:745.72,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Desserts',name:'Rasmalai',desc:'Poached cottage cheese dumplings in saffron milk, pistachio slivers',wt:172,cal:224.34,price:1000,zones:{'Non-AC':1000,'AC':1100,'Outdoor':1050,'VIP':1250},avail:true,variants:''},
+    {cat:'Desserts',name:'Apple Crumble with Vanilla Ice Cream',desc:'',wt:200,cal:367.88,price:1100,zones:{'Non-AC':1100,'AC':1210,'Outdoor':1160,'VIP':1380},avail:true,variants:''},
+    {cat:'Desserts',name:'Spiced Carrot Cake',desc:'Carrot cake, mascarpone frosting, carrot-orange jelly, pineapple compote',wt:141,cal:417.23,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Desserts',name:'Baked Almond Cake',desc:'Vanilla ice cream, toffee almond crumble, almond milk sauce',wt:124,cal:471.45,price:1350,zones:{'Non-AC':1350,'AC':1490,'Outdoor':1420,'VIP':1690},avail:true,variants:''},
+    {cat:'Desserts',name:'Vegan Hazelnut Chocolate Cake',desc:'Vegan biscuit, hazelnut dark chocolate mousse',wt:174,cal:792.95,price:1000,zones:{'Non-AC':1000,'AC':1100,'Outdoor':1050,'VIP':1250},avail:true,variants:''}
+  ];
+
+  var csvLines = [headers.map(csvQ).join(',')];
+
+  sampleData.forEach(function(item) {
+    var row = [
+      item.cat,
+      item.name,
+      item.desc,
+      item.wt === '' ? '' : item.wt,
+      item.cal === '' ? '' : item.cal,
+      item.price
+    ];
+    // For each defined zone, use its price if available, else blank
+    zoneCols.forEach(function(zc) {
+      var zName = zc.replace('zone_', '');
+      row.push(item.zones[zName] !== undefined ? item.zones[zName] : '');
+    });
+    row.push(item.avail ? 'true' : 'false');
+    row.push(item.variants || '');
+    csvLines.push(row.map(csvQ).join(','));
+  });
+
+  var blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'menu_template.csv';
+  a.click();
+}
+
+function csvQ(s) {
+  s = String(s);
+  if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+// ══════════════════════════════════════════════════
+//  STEP 4 — PAYMENT (copied & adapted from original)
+// ══════════════════════════════════════════════════
+document.getElementById('saveMode').addEventListener('click', function() {
+  var restaurant = document.getElementById('restaurant').value.trim() || 'demo';
+  var btn = document.getElementById('saveMode');
+  var statusEl = document.getElementById('modeStatus');
+  statusEl.textContent = '';
+  btnLoad(btn, ' Saving…');
+  sfetch('/pay/mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      restaurant: restaurant,
+      payment_mode: document.getElementById('paymentMode').value
+    })
+  })
+    .then(function(r) {
+      return r.json().then(function(d) {
+        if (!r.ok) throw new Error(d.detail || 'save failed');
+        return d;
+      });
+    })
+    .then(function(d) {
+      statusEl.className = 'status ok';
+      statusEl.textContent = '✓ Payment mode saved: ' + d.payment_mode;
+    })
+    .catch(function(e) {
+      statusEl.className = 'status err';
+      statusEl.textContent = 'Couldn\'t save payment mode: ' + e.message;
+    })
+    .finally(function() { btnDone(btn); });
+});
+
+// ══════════════════════════════════════════════════
+//  UNIFIED PREFILL — fires whenever the slug changes
+//  Loads: display name, tables, zones, menu items,
+//         UPI, payment mode — all in parallel.
+// ══════════════════════════════════════════════════
+var _prefillTimer = null;
+
+// ── Loader helpers ──────────────────────────────────
+function btnLoad(btn, label) {
+  btn._origHtml = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span>' + label;
+  btn.classList.add('loading');
+  btn.disabled = true;
+}
+function btnDone(btn) {
+  btn.innerHTML = btn._origHtml || btn.innerHTML;
+  btn.classList.remove('loading');
+  btn.disabled = false;
+}
+function showTableSkeletons() {
+  var grid = document.getElementById('tableGrid');
+  var html = '';
+  for (var i = 0; i < 8; i++) {
+    html += '<div class="skeleton skeleton-tile"></div>';
+  }
+  grid.innerHTML = html;
+  document.getElementById('tableLoadingSpinner').style.display = 'inline-block';
+}
+function hideTableSkeletons() {
+  document.getElementById('tableLoadingSpinner').style.display = 'none';
+}
+
+function loadRestaurantData() {
+  var restaurant = document.getElementById('restaurant').value.trim();
+  if (!restaurant) restaurant = 'demo';
+  var enc = encodeURIComponent(restaurant);
+
+  var banner    = document.getElementById('prefillBanner');
+  var loading   = document.getElementById('prefillLoading');
+  var mBanner   = document.getElementById('menuPrefillBanner');
+  var mCount    = document.getElementById('menuPrefillCount');
+  var mSkel     = document.getElementById('menuLoadingSkeleton');
+  var payBar    = document.getElementById('paymentLoadingBar');
+  var slugInput = document.getElementById('restaurant');
+
+  // Reset UI state
+  banner.style.display  = 'none';
+  mBanner.style.display = 'none';
+  loading.style.display = 'block';
+  mSkel.style.display   = 'block';
+  payBar.style.display  = 'block';
+  slugInput.classList.add('fetching');
+  showTableSkeletons();
+
+  var foundAny = false;
+
+  // ── 1. UPI ──
+  var p1 = fetch('/pay/upi?restaurant=' + enc)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.upi_vpa)  { document.getElementById('upi').value     = d.upi_vpa;  foundAny = true; }
+      if (d.upi_name) { document.getElementById('upiName').value = d.upi_name; foundAny = true; }
+    })
+    .catch(function() {})
+    .finally(function() { payBar.style.display = 'none'; });
+
+  // ── 2. Payment mode ──
+  var p2 = fetch('/pay/mode?restaurant=' + enc)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.payment_mode) {
+        document.getElementById('paymentMode').value = d.payment_mode;
+        foundAny = true;
+      }
+    })
+    .catch(function() {});
+
+  // ── 3. Tables ──
+  var p3 = sfetch('/manager/tables?restaurant=' + enc)
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function(rows) {
+      if (!Array.isArray(rows) || rows.length === 0) return;
+      foundAny = true;
+      var seenZones = {};
+      zones.forEach(function(z) { seenZones[z.name] = z.color; });
+      var paletteIdx = zones.length;
+      rows.forEach(function(row) {
+        if (row.zone && !seenZones[row.zone]) {
+          seenZones[row.zone] = ZONE_PALETTE[paletteIdx % ZONE_PALETTE.length];
+          paletteIdx++;
+        }
+      });
+      zones = Object.keys(seenZones).map(function(name) {
+        var existing = zones.find(function(z) { return z.name === name; });
+        return existing || { name: name, color: seenZones[name] };
+      });
+      tables = rows.map(function(row) {
+        return { table_number: row.table_number, zone: row.zone };
+      });
+      renderZones();
+      renderTableGrid();
+    })
+    .catch(function() {})
+    .finally(function() { hideTableSkeletons(); });
+
+  // ── 4. Menu ──
+  var p4 = fetch('/menu?restaurant=' + enc)
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function(data) {
+      if (data.restaurant_name) {
+        var nameEl = document.getElementById('name');
+        if (!nameEl.value.trim() || nameEl.value.trim() === nameEl.getAttribute('data-server-name')) {
+          nameEl.value = data.restaurant_name;
+          nameEl.setAttribute('data-server-name', data.restaurant_name);
+        }
+        foundAny = true;
+      }
+      var items = data.items || [];
+      if (items.length === 0) return;
+      foundAny = true;
+      menuItems = items.map(function(it) {
+        return {
+          _category:     it.category || 'General',
+          name:          it.name,
+          description:   it.description || null,
+          weight_gms:    null,
+          calories_kcal: null,
+          price:         it.price || 0,
+          zone_prices:   it.zone_prices || {},
+          available:     it.available !== false
+        };
+      });
+      mCount.textContent    = menuItems.length;
+      mBanner.style.display = 'block';
+      var headers     = ['category','name','description','price','available'];
+      var previewRows = menuItems.slice(0, 10).map(function(it) {
+        return [it._category, it.name, it.description || '', it.price, it.available ? 'true' : 'false'];
+      });
+      renderMenuPreview(headers, previewRows);
+      var statusEl = document.getElementById('menuStatus');
+      statusEl.className   = 'status ok';
+      statusEl.textContent = '✓ ' + menuItems.length + ' items loaded from server. Upload a CSV to replace.';
+    })
+    .catch(function() {})
+    .finally(function() { mSkel.style.display = 'none'; });
+
+  // ── Finalise once all settle ──
+  Promise.all([p1, p2, p3, p4]).then(function() {
+    loading.style.display = 'none';
+    slugInput.classList.remove('fetching');
+    if (foundAny) banner.style.display = 'block';
+  });
+}
+
+// Debounce on input so it fires after typing stops (600 ms)
+var _slugDebounce = null;
+document.getElementById('restaurant').addEventListener('input', function() {
+  clearTimeout(_slugDebounce);
+  _slugDebounce = setTimeout(loadRestaurantData, 600);
+  syncNav();
+});
+document.getElementById('restaurant').addEventListener('change', function() {
+  clearTimeout(_slugDebounce);
+  loadRestaurantData();
+  syncNav();
+});
+
+// ── Save UPI ──
+document.getElementById('saveUpi').addEventListener('click', function() {
+  var restaurant = document.getElementById('restaurant').value.trim() || 'demo';
+  var upi     = document.getElementById('upi').value.trim();
+  var upiName = document.getElementById('upiName').value.trim();
+  var btn     = document.getElementById('saveUpi');
+  var statusEl = document.getElementById('upiStatus');
+  if (!upi || !/^[^@\s]+@[^@\s]+$/.test(upi)) {
+    statusEl.className = 'status err';
+    statusEl.textContent = 'Enter a valid UPI ID (name@bank) to save.';
+    return;
+  }
+  statusEl.textContent = '';
+  btnLoad(btn, ' Saving…');
+  sfetch('/pay/upi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ restaurant: restaurant, upi_vpa: upi, upi_name: upiName })
+  })
+    .then(function(r) {
+      return r.json().then(function(d) {
+        if (!r.ok) throw new Error(d.detail || 'save failed');
+        return d;
+      });
+    })
+    .then(function(d) {
+      statusEl.className = 'status ok';
+      statusEl.textContent = '✓ UPI saved: ' + d.upi_vpa;
+    })
+    .catch(function(e) {
+      statusEl.className = 'status err';
+      statusEl.textContent = 'Couldn\'t save UPI: ' + e.message;
+    })
+    .finally(function() { btnDone(btn); });
+});
+
+// ══════════════════════════════════════════════════
+//  NAV SYNC
+// ══════════════════════════════════════════════════
+function syncNav() {
+  var r = document.getElementById('restaurant').value.trim() || 'demo';
+  var q = '?r=' + encodeURIComponent(r);
+  document.getElementById('navManager').href = 'manager.html' + q;
+  document.getElementById('navAvail').href   = 'availability.html' + q;
+}
+
+window.addEventListener('load', function() {
+  var r = new URLSearchParams(location.search).get('r');
+  if (r) document.getElementById('restaurant').value = r;
+  syncNav();
+  renderZones();
+  renderTableGrid();
+  loadRestaurantData();
+});
+
+// ══════════════════════════════════════════════════
+//  STEP 5 — SUMMARY & SUBMIT
+// ══════════════════════════════════════════════════
+function renderSummary() {
+  var slug  = document.getElementById('restaurant').value.trim() || 'demo';
+  var dname = document.getElementById('name').value.trim();
+  var upi   = document.getElementById('upi').value.trim();
+  var mode  = document.getElementById('paymentMode').value;
+
+  // Per-zone table breakdown
+  var zoneBreakdown = zones.map(function(z) {
+    var cnt = tables.filter(function(t) { return t.zone === z.name; }).length;
+    return '<li><span class="legend-swatch" style="background:' + z.color +
+      ';display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px"></span>' +
+      esc(z.name) + ': ' + cnt + '</li>';
+  }).join('');
+
+  // Per-category menu breakdown
+  var catMap = {};
+  menuItems.forEach(function(item) {
+    catMap[item._category] = (catMap[item._category] || 0) + 1;
+  });
+  var catList = Object.keys(catMap).map(function(c) {
+    return '<li>' + esc(c) + ': ' + catMap[c] + ' items</li>';
+  }).join('');
+
+  var zonePillsHtml = zones.map(function(z) {
+    return '<span class="zone-pill" style="background:' + z.color +
+      ';padding:3px 10px;font-size:12px">' + esc(z.name) + '</span>';
+  }).join(' ');
+
+  document.getElementById('summaryGrid').innerHTML =
+    '<div class="summary-box">' +
+      '<h4>🏪 Restaurant</h4>' +
+      '<p><strong>Slug:</strong> ' + esc(slug) + '</p>' +
+      '<p><strong>Name:</strong> ' + esc(dname || '—') + '</p>' +
+    '</div>' +
+    '<div class="summary-box">' +
+      '<h4>🪑 Tables</h4>' +
+      '<p><strong>Total:</strong> ' + tables.length + '</p>' +
+      '<ul>' + (zoneBreakdown || '<li>No tables</li>') + '</ul>' +
+    '</div>' +
+    '<div class="summary-box">' +
+      '<h4>🍽️ Menu</h4>' +
+      '<p><strong>Total items:</strong> ' + menuItems.length + '</p>' +
+      '<ul>' + (catList || '<li>No items</li>') + '</ul>' +
+    '</div>' +
+    '<div class="summary-box">' +
+      '<h4>💳 Payment</h4>' +
+      '<p><strong>Mode:</strong> ' + esc(mode) + '</p>' +
+      '<p><strong>UPI:</strong> ' + esc(upi || '—') + '</p>' +
+      '<div style="margin-top:8px">' + zonePillsHtml + '</div>' +
+    '</div>';
+}
+
+function buildPayload() {
+  var slug    = document.getElementById('restaurant').value.trim() || 'demo';
+  var dname   = document.getElementById('name').value.trim();
+  var upi     = document.getElementById('upi').value.trim();
+  var upiName = document.getElementById('upiName').value.trim();
+  var payMode = document.getElementById('paymentMode').value || 'prepaid';
+
+  // Build categories from menuItems
+  var catMap = {};
+  menuItems.forEach(function(item) {
+    if (!catMap[item._category]) catMap[item._category] = [];
+    var entry = {
+      name:          item.name,
+      description:   item.description,
+      weight_gms:    item.weight_gms,
+      calories_kcal: item.calories_kcal,
+      price:         item.price,
+      zone_prices:   item.zone_prices,
+      available:     item.available
+    };
+    if (item.variants && item.variants.length) entry.variants = item.variants;
+    catMap[item._category].push(entry);
+  });
+
+  var categories = Object.keys(catMap).map(function(c) {
+    return { name: c, items: catMap[c] };
+  });
+
+  // Always send all fields — the backend does a full replace of every piece
+  // of restaurant data on every submit. Omitting a field means clearing it.
+  return {
+    restaurant:   slug,
+    name:         dname,
+    currency:     '₹',
+    zones:        zones.map(function(z) { return z.name; }),
+    tables:       tables,
+    categories:   categories,
+    upi_vpa:      upi,
+    upi_name:     upiName,
+    payment_mode: payMode
+  };
+}
+
+function submitAll() {
+  var errContainer = document.getElementById('valErrors');
+  var statusEl     = document.getElementById('submitStatus');
+  var submitBtn    = document.getElementById('submitBtn');
+  var overlay      = document.getElementById('submitOverlay');
+  errContainer.innerHTML = '';
+
+  // Validation
+  var errors = [];
+  var slug = document.getElementById('restaurant').value.trim();
+  if (!slug)               errors.push('Restaurant slug is required.');
+  if (tables.length === 0) errors.push('At least one table must be defined.');
+  if (menuItems.length === 0) errors.push('Menu must have at least one item (upload a CSV/Excel file in step 3).');
+
+  if (errors.length) {
+    errContainer.innerHTML = errors.map(function(e) {
+      return '<div class="inline-err show">⚠ ' + esc(e) + '</div>';
+    }).join('');
+    return;
+  }
+
+  // Show overlay and animate progress steps
+  overlay.classList.add('show');
+  btnLoad(submitBtn, ' Uploading…');
+  statusEl.textContent = '';
+
+  var steps = ['ps-menu','ps-tables','ps-embed','ps-payment'];
+  var stepDelay = 1800; // ms between step highlights (purely cosmetic)
+  steps.forEach(function(id, idx) {
+    setTimeout(function() {
+      // Mark previous as done
+      if (idx > 0) {
+        var prev = document.getElementById(steps[idx - 1]);
+        prev.classList.remove('active');
+        prev.classList.add('done');
+        prev.querySelector('.ps-icon').textContent = '✅';
+      }
+      var el = document.getElementById(id);
+      el.classList.add('active');
+      // Replace icon with inline spinner while active
+      var icon = el.querySelector('.ps-icon');
+      icon.innerHTML = '<span class="ps-spinner"></span>';
+    }, idx * stepDelay);
+  });
+
+  var payload = buildPayload();
+
+  sfetch('/crawl/json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(function(r) {
+      return r.json().then(function(d) {
+        if (!r.ok) {
+          var msg = d.detail
+            ? (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail))
+            : 'upload failed (' + r.status + ')';
+          throw new Error(msg);
+        }
+        return d;
+      });
+    })
+    .then(function(data) {
+      // Mark all steps done
+      steps.forEach(function(id) {
+        var el = document.getElementById(id);
+        el.classList.remove('active');
+        el.classList.add('done');
+        el.querySelector('.ps-icon').textContent = '✅';
+      });
+      setTimeout(function() {
+        overlay.classList.remove('show');
+        // Reset step indicators for next submit
+        var icons = ['🍽️','🪑','🧠','💳'];
+        steps.forEach(function(id, i) {
+          var el = document.getElementById(id);
+          el.classList.remove('active','done');
+          el.querySelector('.ps-icon').textContent = icons[i];
         });
-      }
-      promptToken(false);
-
-      var go = document.getElementById("go");
-      var saveMode = document.getElementById("saveMode");
-      var statusEl = document.getElementById("status");
-      go.addEventListener("click", function () {
-        var file = document.getElementById("file").files[0];
-        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
-        var upi = document.getElementById("upi").value.trim();
-        var upiName = document.getElementById("upiName").value.trim();
-        if (!file) {
-          statusEl.className = "status err";
-          statusEl.textContent = "Please choose a PDF or JSON file.";
-          return;
-        }
-        // Loose VPA check: must look like 'handle@provider'.
-        if (upi && !/^[^@\s]+@[^@\s]+$/.test(upi)) {
-          statusEl.className = "status err";
+        if (data.error && !data.chunks) {
+          statusEl.className = 'status err';
+          statusEl.textContent = 'Error: ' + data.error;
+        } else {
+          statusEl.className = data.error ? 'status warn' : 'status ok';
           statusEl.textContent =
-            "That UPI ID doesn't look valid. Expected format: name@bank";
-          return;
+            '✓ Done! Indexed ' + data.chunks + ' text chunks and ' +
+            data.menu_items + ' menu items for \'' + data.restaurant + '\'.' +
+            (data.error ? '\n\nNote: ' + data.error : '');
+          loadRestaurantData();
         }
-        var displayName = document.getElementById("name").value.trim();
-        var isJson =
-          file.type === "application/json" ||
-          /\.json$/i.test(file.name || "");
-
-        go.disabled = true;
-        statusEl.className = "status";
-        statusEl.textContent = "Uploading and parsing… this can take a moment.";
-
-        // Shared success/error renderer for both upload paths.
-        function render(data) {
-          // A hard failure indexes nothing. A warning (e.g. embeddings fell
-          // back offline) still saves the menu, so treat it as success + note.
-          if (data.error && !data.chunks) {
-            statusEl.className = "status err";
-            statusEl.textContent = "Error: " + data.error;
-          } else {
-            statusEl.className = data.error ? "status warn" : "status ok";
-            statusEl.textContent =
-              "Done! Indexed " + data.chunks + " text chunks and " +
-              data.menu_items + " menu items for '" + data.restaurant + "'." +
-              (upi ? "\nPayment UPI linked: " + upi : "") +
-              (data.error ? "\n\nNote: " + data.error : "");
-          }
-        }
-        function fail(e) {
-          statusEl.className = "status err";
-          statusEl.textContent = "Upload failed: " + e.message;
-        }
-        function done() { go.disabled = false; }
-
-        if (isJson) {
-          // JSON path -> /crawl/json. Read the file, merge in the form fields
-          // (restaurant/name/UPI), and post as application/json.
-          var reader = new FileReader();
-          reader.onload = function () {
-            var payload;
-            try {
-              payload = JSON.parse(reader.result);
-            } catch (err) {
-              fail(new Error("Invalid JSON: " + err.message));
-              done();
-              return;
-            }
-            if (typeof payload !== "object" || payload === null) {
-              fail(new Error("JSON root must be an object."));
-              done();
-              return;
-            }
-            // Form fields take precedence over anything in the file.
-            payload.restaurant = restaurant;
-            if (displayName) payload.name = displayName;
-            if (upi) payload.upi_vpa = upi;
-            if (upiName) payload.upi_name = upiName;
-            sfetch("/crawl/json", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
-            })
-              .then(function (r) {
-                return r.json().then(function (d) {
-                  if (!r.ok) {
-                    var msg = d.detail
-                      ? (typeof d.detail === "string"
-                          ? d.detail
-                          : JSON.stringify(d.detail))
-                      : "upload failed (" + r.status + ")";
-                    throw new Error(msg);
-                  }
-                  return d;
-                });
-              })
-              .then(render)
-              .catch(fail)
-              .finally(done);
-          };
-          reader.onerror = function () {
-            fail(new Error("Could not read the file."));
-            done();
-          };
-          reader.readAsText(file);
-          return;
-        }
-
-        // PDF path -> /crawl (multipart).
-        var fd = new FormData();
-        fd.append("file", file);
-        fd.append("restaurant", restaurant);
-        if (displayName) fd.append("name", displayName);
-        if (upi) fd.append("upi_vpa", upi);
-        if (upiName) fd.append("upi_name", upiName);
-        sfetch("/crawl", { method: "POST", body: fd })
-          .then(function (r) { return r.json(); })
-          .then(render)
-          .catch(fail)
-          .finally(done);
+      }, 800);
+    })
+    .catch(function(e) {
+      overlay.classList.remove('show');
+      statusEl.className = 'status err';
+      statusEl.textContent = 'Upload failed: ' + e.message;
+      // Reset step indicators
+      var icons = ['🍽️','🪑','🧠','💳'];
+      steps.forEach(function(id, i) {
+        var el = document.getElementById(id);
+        el.classList.remove('active','done');
+        el.querySelector('.ps-icon').textContent = icons[i];
       });
+    })
+    .finally(function() { btnDone(submitBtn); });
+}
 
-      // Save the restaurant's ordering/payment mode without re-uploading a menu.
-      saveMode.addEventListener("click", function () {
-        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
-        saveMode.disabled = true;
-        sfetch("/pay/mode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            restaurant: restaurant,
-            payment_mode: document.getElementById("paymentMode").value,
-          }),
-        })
-          .then(function (r) {
-            return r.json().then(function (d) {
-              if (!r.ok) throw new Error(d.detail || "save failed");
-              return d;
-            });
-          })
-          .then(function (d) {
-            statusEl.className = "status ok";
-            statusEl.textContent = "Payment mode saved: " + d.payment_mode;
-          })
-          .catch(function (e) {
-            statusEl.className = "status err";
-            statusEl.textContent = "Couldn't save payment mode: " + e.message;
-          })
-          .finally(function () { saveMode.disabled = false; });
-      });
-
-      function loadPaymentMode() {
-        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
-        fetch("/pay/mode?restaurant=" + encodeURIComponent(restaurant))
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            document.getElementById("paymentMode").value = d.payment_mode || "prepaid";
-          })
-          .catch(function () {});
-      }
-      document.getElementById("restaurant").addEventListener("change", loadPaymentMode);
-      window.addEventListener("load", loadPaymentMode);
-
-      // Save/update UPI without re-uploading the menu.
-      var saveUpi = document.getElementById("saveUpi");
-      saveUpi.addEventListener("click", function () {
-        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
-        var upi = document.getElementById("upi").value.trim();
-        var upiName = document.getElementById("upiName").value.trim();
-        if (!upi || !/^[^@\s]+@[^@\s]+$/.test(upi)) {
-          statusEl.className = "status err";
-          statusEl.textContent = "Enter a valid UPI ID (name@bank) to save.";
-          return;
-        }
-        saveUpi.disabled = true;
-        statusEl.className = "status";
-        statusEl.textContent = "Saving UPI…";
-        sfetch("/pay/upi", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            restaurant: restaurant,
-            upi_vpa: upi,
-            upi_name: upiName,
-          }),
-        })
-          .then(function (r) {
-            return r.json().then(function (d) {
-              if (!r.ok) throw new Error(d.detail || "save failed");
-              return d;
-            });
-          })
-          .then(function (d) {
-            statusEl.className = "status ok";
-            statusEl.textContent =
-              "UPI saved for '" + d.restaurant + "': " + d.upi_vpa;
-          })
-          .catch(function (e) {
-            statusEl.className = "status err";
-            statusEl.textContent = "Couldn't save UPI: " + e.message;
-          })
-          .finally(function () { saveUpi.disabled = false; });
-      });
-
-      // Prefill the UPI fields with whatever is currently stored for the slug.
-      function loadUpi() {
-        var restaurant = document.getElementById("restaurant").value.trim() || "demo";
-        fetch("/pay/upi?restaurant=" + encodeURIComponent(restaurant))
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            if (d.upi_vpa) document.getElementById("upi").value = d.upi_vpa;
-            if (d.upi_name) document.getElementById("upiName").value = d.upi_name;
-          })
-          .catch(function () {});
-      }
-      document.getElementById("restaurant").addEventListener("change", loadUpi);
-      window.addEventListener("load", loadUpi);
-
-      // Keep the top-nav links pointed at the current restaurant slug so the
-      // owner lands on the right outlet's dashboard / availability page.
-      function syncNav() {
-        var r = document.getElementById("restaurant").value.trim() || "demo";
-        var q = "?r=" + encodeURIComponent(r);
-        document.getElementById("navManager").href = "manager.html" + q;
-        document.getElementById("navAvail").href = "availability.html" + q;
-      }
-      document.getElementById("restaurant").addEventListener("input", syncNav);
-      document.getElementById("restaurant").addEventListener("change", syncNav);
-      window.addEventListener("load", function () {
-        var r = new URLSearchParams(location.search).get("r");
-        if (r) document.getElementById("restaurant").value = r;
-        syncNav();
-      });
-    </script>
-  </body>
+// ══════════════════════════════════════════════════
+//  UTILITY
+// ══════════════════════════════════════════════════
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+</script>
+</body>
 </html>

@@ -33,6 +33,8 @@ def _item_to_sentence(item: Dict[str, Any], currency: str) -> str:
 
     Format: ``Category: Name – Description (W gms | C kcal) – <cur>Price``
     Missing fields are omitted gracefully so partial rows still read cleanly.
+    Variants (e.g. Organic / Local) are appended so the chatbot can describe
+    the options.
     """
     name = (item.get("name") or "").strip()
     parts: List[str] = []
@@ -59,6 +61,14 @@ def _item_to_sentence(item: Dict[str, Any], currency: str) -> str:
     price = item.get("price_inr", item.get("price"))
     if price is not None:
         sentence += f" – {currency}{_fmt_num(price)}"
+
+    # Append variant labels so the chatbot knows which options exist.
+    variants = item.get("variants") or []
+    if variants:
+        labels = [v.get("label") for v in variants if v.get("label")]
+        if labels:
+            sentence += f" [options: {', '.join(labels)}]"
+
     return sentence
 
 

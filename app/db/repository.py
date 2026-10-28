@@ -606,7 +606,16 @@ async def upsert_table(
 async def replace_tables(
     session: AsyncSession, restaurant_id: int, tables: List[Dict[str, Any]]
 ) -> int:
-    """Bulk-replace the table map (used by JSON menu ingestion)."""
+    """Bulk-replace the table map (used by JSON menu ingestion).
+
+    Deletes ALL existing tables for the restaurant first, then inserts the
+    new set. This makes it idempotent: deleted tables don't linger, renamed
+    tables don't leave stale rows.
+    """
+    await session.execute(
+        text("DELETE FROM restaurant_tables WHERE restaurant_id = :rid"),
+        {"rid": restaurant_id},
+    )
     count = 0
     for t in tables:
         tn = (t.get("table_number") or "").strip()

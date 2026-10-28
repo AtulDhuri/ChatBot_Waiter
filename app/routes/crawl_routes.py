@@ -138,10 +138,10 @@ async def crawl_json(
         tables=tables,
     )
 
-    if body.upi_vpa.strip():
-        await repo.set_restaurant_upi(
-            db, slug, body.upi_vpa.strip(), body.upi_name.strip()
-        )
+    # Always overwrite UPI and payment_mode on every submit so a full
+    # re-upload is a true replacement — clearing UPI or changing mode works.
+    await repo.set_restaurant_upi(db, slug, body.upi_vpa.strip(), body.upi_name.strip())
+    await repo.set_restaurant_payment_mode(db, slug, body.payment_mode)
 
     return CrawlResponse(
         restaurant=slug,
