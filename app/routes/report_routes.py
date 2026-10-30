@@ -74,3 +74,32 @@ async def report_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+@router.get("/dashboard")
+async def analytics_dashboard(
+    restaurant: str = "demo",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_staff),
+):
+    """Merchant analytics payload for the DineOS dashboard."""
+    if restaurant == "all":
+        raise HTTPException(
+            status_code=403,
+            detail="Merchant analytics must be scoped to one outlet.",
+        )
+    rest = await repo.get_restaurant_by_slug(db, restaurant)
+    if rest is None:
+        raise HTTPException(status_code=404, detail="Unknown restaurant.")
+    return await repo.analytics_dashboard(db, restaurant, date_from, date_to)
+
+
+@router.get("/outlets")
+async def report_outlets(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_staff),
+):
+    """List outlets available to the staff dashboard."""
+    return {"outlets": await repo.list_restaurants(db)}

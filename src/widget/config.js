@@ -44,7 +44,7 @@ export var CONFIG = {
     null,
   presetTable: urlParam("t") || urlParam("table") || null,
   currency: "$",
-  title: "Waiter",
+  title: "DineOS",
 };
 
 // Decide whether ?r= looks like an opaque token vs. a legacy slug.

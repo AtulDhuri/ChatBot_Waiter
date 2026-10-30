@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 
 def _as_date(value: Optional[str]) -> Optional[date]:
     """Coerce a 'YYYY-MM-DD' string (or date/datetime) to a datetime.date.
@@ -1060,3 +1061,127 @@ async def sales_report(
             for r in item_rows
         ],
     }
+
+
+async def analytics_dashboard(
+    session: AsyncSession,
+    restaurant: Optional[str],
+    date_from: Optional[str],
+    date_to: Optional[str],
+) -> Dict[str, Any]:
+    """Return merchant analytics aggregates for one outlet or all outlets.
+
+    Revenue is intentionally limited to served orders, while order volume and
+    status counts include every non-cancelled order in the selected range.
+    Dates are inclusive UTC calendar dates, matching the existing reports API.
+    """
+    params: Dict[str, Any] = {}
+    where = "1=1"
+    if restaurant and restaurant != "all":
+        where += " AND r.slug = :restaurant"
+        params["restaurant"] = restaurant
+    dfrom = _as_date(date_from)
+    dto = _as_date(date_to)
+    if dfrom is not None:
+        where += " AND o.created_at::date >= :dfrom"
+        params["dfrom"] = dfrom
+    if dto is not None:
+        where += " AND o.created_at::date <= :dto"
+        params["dto"] = dto
+
+    totals = (await session.execute(text(f"""
+        SELECT count(*) FILTER (WHERE o.status <> 'cancelled') AS orders,
+               count(*) FILTER (WHERE o.status = 'served') AS completed_orders,
+               count(*) FILTER (WHERE o.status <> 'cancelled' AND o.order_type = 'dine_in') AS dine_in_orders,
+               count(*) FILTER (WHERE o.status <> 'cancelled' AND o.order_type = 'takeaway') AS takeaway_orders,
+               count(*) FILTER (WHERE o.status = 'cancelled') AS cancelled,
+               COALESCE(sum(o.total) FILTER (WHERE o.status = 'served'), 0) AS revenue,
+               COALESCE(sum(o.tax) FILTER (WHERE o.status = 'served'), 0) AS tax
+        FROM orders o JOIN restaurants r ON r.id = o.restaurant_id
+        WHERE {where}
+    """), params)).mappings().first()
+
+    status_rows = (await session.execute(text(f"""
+        SELECT o.status, count(*) AS n
+        FROM orders o JOIN restaurants r ON r.id = o.restaurant_id
+        WHERE {where}
+        GROUP BY o.status
+    """), params)).mappings().all()
+
+    trend_rows = (await session.execute(text(f"""
+        SELECT o.created_at::date AS day,
+               count(*) FILTER (WHERE o.status <> 'cancelled') AS orders,
+               COALESCE(sum(o.total) FILTER (WHERE o.status = 'served'), 0) AS revenue
+        FROM orders o JOIN restaurants r ON r.id = o.restaurant_id
+        WHERE {where}
+        GROUP BY o.created_at::date ORDER BY day
+    """), params)).mappings().all()
+
+    item_rows = (await session.execute(text(f"""
+        SELECT it->>'name' AS name,
+               sum((it->>'quantity')::int) AS qty,
+               sum((it->>'line_total')::numeric) AS revenue
+        FROM orders o JOIN restaurants r ON r.id = o.restaurant_id,
+             jsonb_array_elements(o.items) AS it
+        WHERE {where} AND o.status = 'served'
+        GROUP BY it->>'name' ORDER BY qty DESC LIMIT 10
+    """), params)).mappings().all()
+
+    summary_rows = (await session.execute(text(f"""
+        SELECT o.created_at::date AS day,
+               count(*) FILTER (WHERE o.status <> 'cancelled') AS orders,
+               COALESCE(sum(o.total) FILTER (WHERE o.status = 'served'), 0) AS revenue,
+               count(*) FILTER (WHERE o.status = 'served') AS completed_orders
+        FROM orders o JOIN restaurants r ON r.id = o.restaurant_id
+        WHERE {where}
+        GROUP BY o.created_at::date ORDER BY day DESC
+    """), params)).mappings().all()
+
+    params["outlet_all"] = restaurant == "all"
+    params["outlet_slug"] = restaurant or ""
+    outlet_rows = (await session.execute(text(f"""
+        SELECT r.slug, r.name,
+               COALESCE(sum(o.total) FILTER (WHERE o.status = 'served'), 0) AS revenue,
+               count(o.id) FILTER (WHERE o.status <> 'cancelled') AS orders
+        FROM restaurants r LEFT JOIN orders o ON o.restaurant_id = r.id
+          AND ({' AND '.join(where.split(' AND ')[1:]) if ' AND ' in where else '1=1'})
+        GROUP BY r.id, r.slug, r.name
+        HAVING (:outlet_all OR r.slug = :outlet_slug)
+        ORDER BY revenue DESC, r.name
+    """), params)).mappings().all()
+
+    table_where = "1=1"
+    table_params: Dict[str, Any] = {}
+    if restaurant and restaurant != "all":
+        table_where += " AND r.slug = :table_restaurant"
+        table_params["table_restaurant"] = restaurant
+    active = (await session.execute(text(f"""
+        SELECT count(DISTINCT o.table_number) AS n
+        FROM orders o JOIN restaurants r ON r.id = o.restaurant_id
+        WHERE {table_where} AND o.order_type = 'dine_in'
+          AND o.status IN ('new','preparing','ready')
+          AND o.table_number <> '-'
+    """), table_params)).scalar() or 0
+
+    return {
+        "currency": settings.currency if 'settings' in globals() else "$",
+        "total_revenue": float(totals["revenue"] or 0),
+        "total_orders": int(totals["orders"] or 0),
+        "completed_orders": int(totals["completed_orders"] or 0),
+        "dine_in_orders": int(totals["dine_in_orders"] or 0),
+        "takeaway_orders": int(totals["takeaway_orders"] or 0),
+        "cancelled_orders": int(totals["cancelled"] or 0),
+        "tax": float(totals["tax"] or 0),
+        "active_tables": int(active),
+        "total_staff": settings.staff_count,
+        "by_status": {r["status"]: int(r["n"]) for r in status_rows},
+        "trend": [{"date": str(r["day"]), "orders": int(r["orders"] or 0), "revenue": float(r["revenue"] or 0)} for r in trend_rows],
+        "top_items": [{"name": r["name"], "quantity": int(r["qty"] or 0), "revenue": float(r["revenue"] or 0)} for r in item_rows],
+        "summary": [{"date": str(r["day"]), "orders": int(r["orders"] or 0), "revenue": float(r["revenue"] or 0), "aov": float(r["revenue"] or 0) / int(r["completed_orders"] or 1) if r["completed_orders"] else 0} for r in summary_rows],
+        "outlets": [{"slug": r["slug"], "name": r["name"], "revenue": float(r["revenue"] or 0), "orders": int(r["orders"] or 0)} for r in outlet_rows],
+    }
+
+
+async def list_restaurants(session: AsyncSession) -> List[Dict[str, Any]]:
+    rows = (await session.execute(text("SELECT slug, name FROM restaurants ORDER BY name, slug"))).mappings().all()
+    return [dict(r) for r in rows]

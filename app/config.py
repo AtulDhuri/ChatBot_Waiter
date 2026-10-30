@@ -47,8 +47,9 @@ class Settings(BaseSettings):
     )
 
     # App
-    app_name: str = "Chatbot Waiter"
+    app_name: str = "DineOS"
     restaurant_name: str = "Demo Bistro"
+    staff_count: int = Field(default=0, ge=0, validation_alias="STAFF_COUNT")
     currency: str = "$"
 
     # Deployment environment. "production" turns on fail-fast security checks:

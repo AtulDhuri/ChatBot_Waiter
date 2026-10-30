@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Demo Bistro — Chatbot Waiter</title>
+    <title>DineOS — Demo Bistro</title>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -48,11 +48,20 @@
         .hero h1 { font-size: 30px; }
         .steps { grid-template-columns: 1fr; }
       }
+      :root { color-scheme: dark; }
+      body { color: #f8fafc; background: #020617; }
+      .hero { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%); }
+      .card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.10); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+      .step .n, .cta { background: #6366f1; }
+      .cta:hover { background: #4f46e5; }
+      .muted { color: #94a3b8; }
+      code { background: rgba(255,255,255,.10); color: #f8fafc; }
+      a { color: #a855f7; }
     </style>
   </head>
   <body>
     <section class="hero">
-      <h1>🍽️ Demo Bistro</h1>
+      <h1>🍽️ Demo Bistro · DineOS</h1>
       <p>
         Scan, chat, and order. Our AI waiter answers menu questions, takes your
         order, and prints your bill — right from your phone.

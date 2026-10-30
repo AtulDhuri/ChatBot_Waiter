@@ -146,7 +146,7 @@ export function renderChat() {
     "aria-label": "Message",
   });
   ui.input = input;
-  var send = el("button", { class: "wa-btn", onclick: handleSend }, ["Send"]);
+  var send = el("button", { class: "wa-btn", onclick: handleSend, "aria-label": "Send message" }, ["Send ➤"]);
   input.addEventListener("keydown", function (e) {
     if (e.key === "Enter") handleSend();
   });

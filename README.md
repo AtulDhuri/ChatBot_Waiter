@@ -1,4 +1,4 @@
-# Chatbot Waiter
+# DineOS
 
 A FastAPI backend + embeddable chat widget for a restaurant "AI waiter": menu
 ingestion (PDF), retrieval-augmented Q&A, ordering, billing, UPI payment QR, and

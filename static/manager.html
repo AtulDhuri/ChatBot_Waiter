@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Manager Dashboard</title>
+    <title>DineOS — Manager Dashboard</title>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -122,6 +122,35 @@
       #receipt .r-total { font-weight: 700; font-size: 15px; }
       #receipt .r-small { font-size: 11px; }
       @page { margin: 0; }
+      :root { color-scheme: dark; }
+      body { background:#020617; color:#f8fafc; }
+      header { background:#0f172a; border-bottom:1px solid rgba(255,255,255,.10); }
+      .controls { background:#0f172a; border-bottom-color:rgba(255,255,255,.10); }
+      input, select, button, button.ghost { background:#0f172a; color:#f8fafc; border-color:rgba(255,255,255,.10); }
+      button.primary { background:#6366f1; }
+      button.primary:hover { background:#4f46e5; }
+      .kpi, .bill, .modal { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.10); box-shadow:0 8px 24px rgba(0,0,0,.24); }
+      label, .empty { color:#94a3b8; }
+      button.print { background:#22c55e; }
+      button.mark-paid { background:#3b82f6; }
+      a { color:#a855f7 !important; }
+      .bill-who, .bill-when, .pay, .items .line .amt, .totals .row, .modal p.sub { color:#94a3b8; }
+      .bill-no, .items .line .nm, .totals .grand, .modal h2 { color:#f8fafc; }
+      .zone { color:#93c5fd; }
+      .items, .totals { border-color:rgba(255,255,255,.10); }
+      .items .note { color:#fbbf24; }
+      .pill.new { background:rgba(248,113,113,.18); color:#fca5a5; }
+      .pill.preparing { background:rgba(245,158,11,.18); color:#fcd34d; }
+      .pill.ready { background:rgba(34,197,94,.18); color:#86efac; }
+      .pill.served { background:rgba(148,163,184,.18); color:#cbd5e1; }
+      .pill.cancelled { background:rgba(148,163,184,.12); color:#94a3b8; }
+      .pay.paid { color:#22c55e; }
+      .pay.unpaid { color:#fbbf24; }
+      .modal-bg { background:rgba(2,6,23,.78); backdrop-filter:blur(4px); }
+      .modal input, .modal select, .modal textarea { background:#0f172a; color:#f8fafc; border-color:rgba(255,255,255,.10); }
+      .modal input::placeholder, .modal textarea::placeholder { color:#64748b; }
+      .modal .actions button { color:#f8fafc; }
+      button.mark-unpaid { background:rgba(245,158,11,.12); color:#fbbf24; border-color:#a16207; }
     </style>
   </head>
   <body>
@@ -129,6 +158,7 @@
       <h1>📊 Manager Dashboard</h1>
       <div class="spacer"></div>
       <a id="availLink" href="availability.html" style="color:#8fd1ff;text-decoration:none">🍽️ Dish availability</a>
+      <a href="reports.html" style="color:#c4b5fd;text-decoration:none">📈 Analytics</a>
       <button id="receiptSettingsBtn" class="ghost">🧾 Receipt settings</button>
       <button id="tokenBtn" class="ghost">🔑 Token</button>
     </header>

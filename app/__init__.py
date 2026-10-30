@@ -1,3 +1,3 @@
-"""Chatbot Waiter backend package."""
+"""DineOS backend package."""
 
 __version__ = "1.0.0"

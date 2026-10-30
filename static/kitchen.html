@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Kitchen Display</title>
+    <title>DineOS — Kitchen Display</title>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -77,6 +77,16 @@
       .actions button:disabled { opacity: .5; cursor: default; }
       .empty { padding: 40px; text-align: center; color: #6b7682; }
       .err { color: #e4572e; padding: 0 16px; }
+      :root { color-scheme: dark; }
+      body { background:#020617; color:#f8fafc; }
+      header { background:#0f172a; border-bottom-color:rgba(255,255,255,.10); }
+      header input { background:#0f172a; border-color:rgba(255,255,255,.10); }
+      header button, .b-advance { background:#6366f1; }
+      header button:hover, .b-advance:hover { background:#4f46e5; }
+      .card { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.10); }
+      .card.new { border-left-color:#6366f1; }
+      .card.ready { border-left-color:#22c55e; }
+      .empty { color:#94a3b8; }
     </style>
   </head>
   <body>

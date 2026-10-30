@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin — Restaurant Setup</title>
+  <title>DineOS — Restaurant Setup</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
 
@@ -651,6 +651,20 @@
       animation: spin .65s linear infinite;
       flex-shrink: 0;
     }
+  <style>
+    :root { color-scheme: dark; --primary:#6366f1; --secondary:#3b82f6; --success:#22c55e; --warning:#a855f7; --bg:#020617; --card:rgba(255,255,255,.05); --border:rgba(255,255,255,.10); --text:#f8fafc; --muted:#94a3b8; --shadow:0 8px 32px rgba(0,0,0,.28); }
+    body { background:var(--bg); color:var(--text); }
+    .navbar a, .card, .submit-overlay-card { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.10); color:var(--text); box-shadow:var(--shadow); }
+    .navbar a:hover, .btn-outline:hover { border-color:#6366f1; color:#f8fafc; }
+    .btn-primary, .step-item.active .step-circle { background:#6366f1; border-color:#6366f1; }
+    .btn-primary:hover { background:#4f46e5; }
+    input[type=text], input[type=number], input[type=file], select, textarea { background:#0f172a; color:#f8fafc; border-color:rgba(255,255,255,.10); }
+    .btn-outline { color:#f8fafc; border-color:rgba(255,255,255,.10); }
+    .skeleton { background:linear-gradient(90deg,#0f172a 25%,#1e293b 50%,#0f172a 75%); }
+    .submit-overlay { background:rgba(2,6,23,.78); }
+    .spinner-dark { border-color:rgba(255,255,255,.15); border-top-color:#3b82f6; }
+    .step-item.active .step-circle { box-shadow:0 0 0 4px rgba(99,102,241,.25); }
+    ::-webkit-scrollbar-thumb { background:#475569; }
   </style>
 </head>
 <body>
@@ -663,7 +677,7 @@
 
 <!-- ── Page header ── -->
 <div class="page-header">
-  <h1>🍴 Restaurant Setup</h1>
+  <h1>🍴 DineOS Restaurant Setup</h1>
   <p>Configure your restaurant, tables, menu and payment settings in a few easy steps.</p>
 </div>
 

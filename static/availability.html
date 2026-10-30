@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dish Availability</title>
+    <title>DineOS — Dish Availability</title>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -80,6 +80,17 @@
         font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none;
       }
       .toast.show { opacity: 1; }
+      :root { color-scheme: dark; }
+      body { background:#020617; color:#f8fafc; }
+      header { background:#0f172a; border-bottom:1px solid rgba(255,255,255,.10); }
+      .controls { background:#0f172a; border-bottom-color:rgba(255,255,255,.10); }
+      input, select, button, button.ghost { background:#0f172a; color:#f8fafc; border-color:rgba(255,255,255,.10); }
+      button.primary { background:#6366f1; }
+      button.primary:hover { background:#4f46e5; }
+      .dish { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.10); }
+      .stat, .cat h2 { color:#94a3b8; }
+      .cat h2 { border-bottom-color:rgba(255,255,255,.10); }
+      .toast { background:#0f172a; color:#f8fafc; }
     </style>
   </head>
   <body>
