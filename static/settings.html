@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DineOS Settings</title>
+<style>
+:root{font:15px system-ui;color:#182230;background:#f4f6fb}*{box-sizing:border-box}body{margin:0;padding:28px 16px}.wrap{max-width:980px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.top h1{margin:0;font-size:28px}.top p{color:#697386;margin:5px 0 0}.back,.logout{border:1px solid #dbe1eb;background:#fff;border-radius:9px;padding:10px 14px;color:#344054;text-decoration:none;font-weight:700;cursor:pointer}.logout{color:#a33b46}.card{background:#fff;border:1px solid #e3e8f0;border-radius:18px;padding:28px;margin-bottom:20px;box-shadow:0 12px 30px #2638580b}.eyebrow{color:#6759cf;text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:800}.card h2{margin:5px 0 8px}.muted{color:#697386;margin:0 0 24px}form{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{font-size:13px;font-weight:700}input,select{display:block;width:100%;height:44px;margin-top:7px;padding:0 12px;border:1px solid #d6dce7;border-radius:9px;background:#fff;font:inherit}input:focus,select:focus{outline:0;border-color:#6759cf;box-shadow:0 0 0 3px #6759cf1c}.full{grid-column:1/-1}.primary{height:42px;border:0;border-radius:9px;background:#6759cf;color:#fff;font-weight:800;padding:0 18px;cursor:pointer}.primary:disabled{opacity:.6}.msg{min-height:20px;color:#087443;margin:9px 0 0}.msg.error{color:#b42318}.table-wrap{overflow:auto}.table{width:100%;min-width:650px;border-collapse:collapse;text-align:left}.table th{font-size:11px;color:#98a1b1;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid #e8ecf2}.table td{padding:13px 8px;border-bottom:1px solid #eef1f5;font-size:13px}.action{border:1px solid #d7ddec;background:#fff;border-radius:7px;padding:6px 9px;font-size:12px;cursor:pointer}.action:hover{border-color:#6759cf;color:#6759cf}@media(max-width:650px){form{grid-template-columns:1fr}.full{grid-column:auto}.top{align-items:flex-start;gap:12px;flex-direction:column}}
+</style>
+</head>
+<body><script src="/admin-header.js"></script>
+<main class="wrap">
+<header class="top"><div><h1>Settings</h1><p>Manage restaurant configuration and team access.</p></div><div><a class="back" href="admin.html">← Restaurant setup</a> <button class="logout" id="logout" type="button">Log out</button></div></header>
+<section class="card"><div class="eyebrow">Team access</div><h2>Staff Management</h2><p class="muted">Create secure portal access for Managers and Kitchen staff. Users are automatically assigned to your tenant and outlet.</p>
+<form id="createStaffForm">
+<label>Full name<input id="name" maxlength="120" placeholder="Chef Anil" required></label>
+<label>Username<input id="username" maxlength="254" pattern="[A-Za-z0-9_.@+-]+" placeholder="chef.anil" required></label>
+<label>Email<input id="email" type="email" placeholder="chef@restaurant.com" required></label>
+<label>Role<select id="role"><option value="kitchen">Kitchen</option><option value="manager">Manager</option></select></label>
+<label>Password<input id="password" type="password" minlength="10" placeholder="At least 10 characters" required></label>
+<label>Confirm password<input id="confirm" type="password" minlength="10" required></label>
+<div class="full"><button class="primary" id="createButton" type="button">Create user</button><p class="msg" id="msg"></p></div>
+</form></section>
+<section class="card"><div class="eyebrow">Access directory</div><h2>Restaurant users</h2><p class="muted">Enable, disable, and reset passwords for your team.</p><div class="table-wrap"><table class="table"><thead><tr><th>USER</th><th>USERNAME</th><th>ROLE</th><th>STATUS</th><th>LAST LOGIN</th><th>ACTIONS</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  function showMessage(text, error) { $('msg').textContent = text || ''; $('msg').className = error ? 'msg error' : 'msg'; }
+  async function api(url, options) {
+    options = options || {};
+    options.credentials = 'include';
+    var response = await fetch(url, options);
+    if (response.status === 401) { window.location.href = '/login.html'; throw new Error('Login required.'); }
+    var data = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(data.detail || 'Request failed.');
+    return data;
+  }
+  async function loadUsers() {
+    try {
+      var data = await api('/staff');
+      $('rows').innerHTML = (data.users || []).map(function (user) {
+        var actions = user.role === 'admin' ? '—' : '<button type="button" class="action" data-status-id="' + user.id + '" data-status="' + (user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE') + '">' + (user.status === 'ACTIVE' ? 'Disable' : 'Enable') + '</button> <button type="button" class="action" data-reset-id="' + user.id + '">Reset password</button>';
+        return '<tr><td>' + user.name + '</td><td>' + user.username + '</td><td>' + String(user.role).toUpperCase() + '</td><td>' + user.status + '</td><td>' + (user.last_login ? new Date(user.last_login).toLocaleString() : 'Never') + '</td><td>' + actions + '</td></tr>';
+      }).join('');
+      document.querySelectorAll('[data-status-id]').forEach(function (button) { button.onclick = async function () { try { await api('/staff/' + button.dataset.statusId + '/status', { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({status: button.dataset.status}) }); await loadUsers(); } catch (error) { showMessage(error.message, true); } }; });
+      document.querySelectorAll('[data-reset-id]').forEach(function (button) { button.onclick = async function () { var password = window.prompt('New password, at least 10 characters:'); if (!password) return; try { await api('/staff/' + button.dataset.resetId + '/reset-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: password}) }); showMessage('Password reset successfully.'); } catch (error) { showMessage(error.message, true); } }; });
+    } catch (error) { showMessage(error.message, true); }
+  }
+  async function createUser() {
+    var password = $('password').value;
+    if (password !== $('confirm').value) { showMessage('Passwords do not match.', true); return; }
+    var button = $('createButton'); button.disabled = true; showMessage('Creating user...');
+    try {
+      await api('/staff', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:$('name').value.trim(), username:$('username').value.trim(), email:$('email').value.trim(), password:password, role:$('role').value}) });
+      $('createStaffForm').reset(); showMessage('User created successfully.'); await loadUsers();
+    } catch (error) { showMessage(error.message, true); } finally { button.disabled = false; }
+  }
+  $('createButton').addEventListener('click', createUser);
+  $('logout').addEventListener('click', function () { fetch('/auth/logout', {method:'POST', credentials:'include'}).finally(function () { window.location.href='/login.html'; }); });
+  loadUsers();
+}());
+</script>
+</body></html>

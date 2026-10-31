@@ -3,13 +3,12 @@
 Kitchen status and payment closure are intentionally separate: an order may be
 served while the tab remains open until staff verifies the final bill payment.
 """
-from __future__ import annotations
-
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repository as repo
-from app.routes.deps import get_db, require_staff, resolve_session
+from app.routes.deps import get_db, require_staff, resolve_session, tenant_matches
 from app.schemas import (
     PayResponse,
     PostpaidBillRequest,
@@ -117,7 +116,7 @@ async def pay_postpaid_bill(
 async def settle_postpaid(
     body: PostpaidSettleRequest,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Verify payment for a postpaid session and close it when served."""
     session_id = sess.verify(body.session_id)
@@ -127,8 +126,8 @@ async def settle_postpaid(
     if row is None:
         raise HTTPException(status_code=404, detail="Session not found.")
     rest = await repo.get_restaurant_by_slug(db, body.restaurant)
-    if rest is None or rest["id"] != row["restaurant_id"]:
-        raise HTTPException(status_code=403, detail="Session does not belong to this restaurant.")
+    if rest is None or rest["id"] != row["restaurant_id"] or not tenant_matches(_principal, rest["id"]):
+        raise HTTPException(status_code=403, detail="Session does not belong to this tenant.")
     if not is_postpaid(rest.get("payment_mode")):
         raise HTTPException(status_code=409, detail="This restaurant uses prepaid checkout.")
 

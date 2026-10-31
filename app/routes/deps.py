@@ -20,39 +20,76 @@ from app.services import security
 logger = logging.getLogger("waiter.security")
 
 
-async def require_staff(
-    x_staff_token: Optional[str] = Header(default=None),
-    token: Optional[str] = Query(default=None),
-) -> None:
-    """Guard staff-only endpoints.
+async def require_staff(request: Request) -> Dict[str, Any]:
+    """Authenticate an admin request from the HttpOnly JWT cookie or Bearer header.
 
-    Accepts the token from the 'X-Staff-Token' header or a '?token=' query
-    param (the latter lets static pages pass it easily).
-
-    Outside production, if STAFF_TOKEN is unset, protection is disabled so the
-    demo still runs out of the box. In production this never happens: config
-    fail-fast (see Settings) refuses to boot without a strong STAFF_TOKEN, so
-    here we additionally guard against a misconfigured runtime by denying all
-    staff access when the token is somehow still empty.
+    The outlet and tenant claims are authoritative. Query-string slugs are only
+    display/routing inputs and must never grant access.
     """
-    expected = settings.staff_token
-    if not expected:
-        if settings.is_production:
-            # Defensive: should be unreachable because config fails fast, but
-            # never serve staff endpoints unauthenticated in production.
-            logger.error("STAFF_TOKEN empty in production; denying staff access.")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Staff authentication required.",
-            )
-        return  # protection disabled (demo/dev mode only)
-    provided = x_staff_token or token
-    # Constant-time comparison to avoid leaking the token via timing.
-    if not provided or not sess.constant_time_eq(provided, expected):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Staff authentication required.",
-        )
+    from app.services.auth import decode_token, token_from_request
+    token = token_from_request(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    payload = decode_token(token)
+    # Re-check the user and outlet on every protected request so disabling an
+    # account or changing its role invalidates already-issued JWTs promptly.
+    from sqlalchemy import text
+    from app.db.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as auth_db:
+        try:
+            user = (await auth_db.execute(text("""SELECT u.active,u.status,u.role,u.tenant_id,u.outlet_id,
+                r.subscription_status, r.slug AS restaurant_slug, u.tenant_id AS outlet_tenant_id
+                FROM users u JOIN restaurants r ON r.id=u.outlet_id
+                JOIN tenants t ON t.id=u.tenant_id
+                JOIN outlets o ON o.id=u.outlet_id AND o.tenant_id=u.tenant_id
+                WHERE u.id=:id"""), {"id": payload.get("userId")})).mappings().first()
+        except Exception:
+            user = (await auth_db.execute(text("""SELECT u.active,u.status,u.role,u.tenant_id,u.outlet_id,
+                r.subscription_status, r.slug AS restaurant_slug, u.tenant_id AS outlet_tenant_id
+                FROM users u JOIN restaurants r ON r.id=u.outlet_id
+                WHERE u.id=:id"""), {"id": payload.get("userId")})).mappings().first()
+    if not user or not user["active"] or user.get("status", "ACTIVE") != "ACTIVE":
+        raise HTTPException(status_code=401, detail="Account is disabled.")
+    if int(user["tenant_id"]) != int(payload.get("tenantId", -1)) or int(user["outlet_id"]) != int(payload.get("outletId", -1)):
+        raise HTTPException(status_code=403, detail="Authentication tenant mismatch.")
+    payload["role"] = user["role"]
+    payload["restaurantSlug"] = user.get("restaurant_slug")
+    payload["subscriptionStatus"] = user.get("subscription_status") or payload.get("subscriptionStatus")
+    if payload.get("subscriptionStatus") in {"EXPIRED", "SUSPENDED"}:
+        raise HTTPException(status_code=402, detail="Subscription Expired. Please renew your plan.")
+    role = payload.get("role")
+    path = request.url.path
+    if path.startswith("/reports") and role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Reports require manager access.")
+    if path.startswith("/manager") and role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Manager access required.")
+    if path.startswith("/crawl") and role != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required.")
+    if path == "/qr/token" and role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Manager access required.")
+    if path.startswith("/order") and role not in {"admin", "manager", "kitchen"}:
+        raise HTTPException(status_code=403, detail="Kitchen access required.")
+    if path.startswith("/staff") and role != "admin":
+        raise HTTPException(status_code=403, detail="Staff management requires administrator access.")
+    if path == "/close-table" and role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Table closing requires manager access.")
+    if path.startswith("/order/") and role == "kitchen":
+        # Kitchen users may update kitchen status, but never payment state.
+        pass
+    if path.startswith("/postpaid") and request.method == "POST" and role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Postpaid settlement requires manager access.")
+    if path.startswith("/pay") and request.method == "POST" and role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Manager access required.")
+    return payload
+
+
+def tenant_matches(principal: Dict[str, Any], outlet_id: int) -> bool:
+    return int(principal.get("outletId", -1)) == int(outlet_id) and int(principal.get("tenantId", -1)) == int(outlet_id)
+
+async def require_role(principal: Dict[str, Any], roles: set[str]) -> Dict[str, Any]:
+    if principal.get("role") not in roles:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    return principal
 
 
 async def resolve_cart(

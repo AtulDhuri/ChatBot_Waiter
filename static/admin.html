@@ -54,6 +54,8 @@
       transition: border-color .2s, color .2s;
     }
     .navbar a:hover { border-color: var(--secondary); color: var(--secondary); }
+    .admin-logout{min-width:150px;text-align:center;background:#fff;color:#a33b46;border:1px solid #f0cdd1;border-radius:12px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.05)}
+    .admin-logout:hover{background:#fff5f5;border-color:#d9828c}
 
     /* ── Page header ── */
     .page-header {
@@ -135,7 +137,10 @@
     .step-item.active .step-label { color: var(--primary); }
     .step-item.done .step-label { color: var(--success); }
 
-    /* ── Card / Step panels ── */
+    /* ── Staff management ── */
+    .staff-card{max-width:900px;margin:0 auto 28px;background:linear-gradient(145deg,#fff 0%,#fbfcff 100%);border:1px solid #e5eaf3;border-radius:22px;box-shadow:0 14px 38px rgba(31,45,71,.08);padding:30px 34px}
+    .staff-heading{display:flex;align-items:center;gap:15px}.staff-icon{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:#ede9fe;color:#6045c5;font-size:26px}.staff-kicker{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:#6d5bd0;font-weight:800;margin-bottom:2px}.staff-heading h2{margin:0;font-size:24px;letter-spacing:-.03em}.staff-heading p{margin:4px 0 0;color:var(--muted);font-size:14px}.staff-divider{height:1px;background:#edf0f5;margin:25px 0}.staff-form{display:grid;grid-template-columns:1fr 1fr;gap:18px 22px}.staff-field{margin:0}.staff-field label{font-size:13px;margin-bottom:8px}.staff-field input{height:44px;padding:0 13px;border:1px solid #d9dfeb;border-radius:10px;background:#fff;font-size:14px}.staff-field input::placeholder{color:#a5adbb}.staff-field input:focus{border-color:#6d5bd0;box-shadow:0 0 0 4px #6d5bd019}.staff-help{display:block;color:#929aaa;font-size:11px;margin-top:6px}.staff-role-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.staff-role{display:flex;align-items:center;gap:9px;text-align:left;background:#fff;color:#263247;border:1px solid #d9dfeb;border-radius:11px;padding:10px 11px;cursor:pointer;min-height:64px}.staff-role.active{border-color:#6d5bd0;background:#f5f2ff;box-shadow:0 0 0 2px #6d5bd022}.staff-role .role-symbol{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;background:#f0edff;color:#6d5bd0;font-size:17px}.staff-role strong,.staff-role small{display:block}.staff-role strong{font-size:13px}.staff-role small{font-size:10px;color:#8992a3;margin-top:2px}.staff-role i{font-style:normal;margin-left:auto;color:#6d5bd0;opacity:0}.staff-role.active i{opacity:1}.staff-role-field select{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}.staff-actions{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding-top:2px}.staff-submit{background:#635bdb;border-radius:10px;height:42px;padding:0 20px}.staff-submit:hover{background:#5148c5}.staff-list-head{display:flex;justify-content:space-between;align-items:end;border-top:1px solid #edf0f5;margin-top:28px;padding-top:23px}.staff-list-head h3{margin:0;font-size:16px}.staff-list-head p{margin:4px 0 0;color:var(--muted);font-size:12px}.staff-count{font-size:12px;color:#6d5bd0;background:#f0edff;padding:6px 10px;border-radius:20px;font-weight:700}.staff-table-wrap{overflow:auto;margin-top:14px}.staff-table{width:100%;border-collapse:collapse;text-align:left;min-width:680px}.staff-table th{font-size:10px;letter-spacing:.08em;color:#98a1b1;font-weight:800;padding:10px 8px;border-bottom:1px solid #e9edf4}.staff-table td{font-size:13px;padding:12px 8px;border-bottom:1px solid #edf0f5}.staff-table .btn{font-size:11px;padding:6px 9px}.staff-table tr:hover{background:#fafbff}
+
     .card {
       max-width: 900px;
       margin: 0 auto;
@@ -522,6 +527,11 @@
     /* ── Responsive card padding ── */
     @media (max-width: 600px) {
       .card { padding: 20px 16px; }
+      .staff-card { padding: 22px 18px; border-radius: 16px; }
+      .staff-form { grid-template-columns: 1fr; gap: 15px; }
+      .staff-role-grid { grid-template-columns: 1fr; }
+      .staff-actions { grid-column: auto; align-items: flex-start; flex-direction: column; }
+      .staff-heading h2 { font-size: 20px; }
       .step-label { display: none; }
     }
 
@@ -663,16 +673,21 @@
     .skeleton { background:linear-gradient(90deg,#0f172a 25%,#1e293b 50%,#0f172a 75%); }
     .submit-overlay { background:rgba(2,6,23,.78); }
     .spinner-dark { border-color:rgba(255,255,255,.15); border-top-color:#3b82f6; }
-    .step-item.active .step-circle { box-shadow:0 0 0 4px rgba(99,102,241,.25); }
+    .submit-overlay-card { background:#fff !important; color:#182230 !important; border:1px solid #e5e7eb; }
+    .submit-overlay-card h3 { color:#182230 !important; }
+    .submit-overlay-card p, .submit-overlay-card .progress-step { color:#667085 !important; }
+    .submit-overlay-card .progress-step.active { color:#182230 !important; }
     ::-webkit-scrollbar-thumb { background:#475569; }
   </style>
 </head>
-<body>
+<body><script src="/admin-header.js"></script>
 
 <!-- ── Navbar ── -->
 <div class="navbar">
   <a id="navManager" href="manager.html">📊 Manager dashboard</a>
   <a id="navAvail" href="availability.html">🍽️ Dish availability</a>
+  <a id="navSettings" href="settings.html">⚙️ Settings</a>
+  <button id="adminLogout" class="admin-logout" type="button">↪ Log out</button>
 </div>
 
 <!-- ── Page header ── -->
@@ -990,23 +1005,17 @@
 // ══════════════════════════════════════════════════
 //  STAFF AUTH (copied exactly from original)
 // ══════════════════════════════════════════════════
-var TOKEN_KEY = "waiter_staff_token";
-function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
-function promptToken(force) {
-  if (!force && getToken()) return;
-  var t = window.prompt("Enter staff access token:", getToken());
-  if (t !== null) localStorage.setItem(TOKEN_KEY, t.trim());
-}
+// JWT is stored in the HttpOnly cookie set by /auth/login. Never store credentials in localStorage.
+function getToken() { return ""; }
+function promptToken(force) { if (force) window.location.href = '/login.html'; }
 function sfetch(url, opts) {
   opts = opts || {};
-  opts.headers = opts.headers || {};
-  opts.headers["X-Staff-Token"] = getToken();
+  opts.credentials = 'include';
   return fetch(url, opts).then(function(r) {
-    if (r.status === 401) { promptToken(true); throw new Error("Staff auth required"); }
+    if (r.status === 401 || r.status === 402) { window.location.href = '/login.html'; throw new Error('Authentication required'); }
     return r;
   });
 }
-promptToken(false);
 
 // ══════════════════════════════════════════════════
 //  APP STATE
@@ -1925,12 +1934,31 @@ function syncNav() {
 }
 
 window.addEventListener('load', function() {
-  var r = new URLSearchParams(location.search).get('r');
+  var params = new URLSearchParams(location.search);
+  var r = params.get('r');
   if (r) document.getElementById('restaurant').value = r;
-  syncNav();
-  renderZones();
-  renderTableGrid();
-  loadRestaurantData();
+  fetch('/auth/me', { credentials: 'include' }).then(function(response) {
+    return response.ok ? response.json() : null;
+  }).then(function(identity) {
+    var authenticatedSlug = identity && identity.outletSlug;
+    if (authenticatedSlug) {
+      r = authenticatedSlug;
+      document.getElementById('restaurant').value = authenticatedSlug;
+      history.replaceState(null, '', '/admin.html?r=' + encodeURIComponent(authenticatedSlug));
+    } else if (r) {
+      document.getElementById('restaurant').value = r;
+    }
+    syncNav();
+    renderZones();
+    renderTableGrid();
+    loadRestaurantData();
+  }).catch(function() {
+    if (r) document.getElementById('restaurant').value = r;
+    syncNav();
+    renderZones();
+    renderTableGrid();
+    loadRestaurantData();
+  });
 });
 
 // ══════════════════════════════════════════════════
@@ -2150,6 +2178,47 @@ function esc(s) {
     .replace(/"/g,'&quot;')
     .replace(/'/g,'&#39;');
 }
+
+// ── STAFF MANAGEMENT ──────────────────────────────
+function staffMessage(text, kind) {
+  var el = document.getElementById('staffMessage');
+  el.className = 'status ' + (kind || '');
+  el.textContent = text || '';
+}
+function loadStaffUsers() {
+  sfetch('/staff').then(function(r) {
+    return r.json().then(function(d) { if (!r.ok) throw new Error(d.detail || 'Could not load staff.'); return d; });
+  }).then(function(data) {
+    var countEl = document.getElementById('staffCount');
+    if (countEl) countEl.textContent = (data.users || []).length + ' users';
+    var rows = document.getElementById('staffRows');
+    rows.innerHTML = (data.users || []).map(function(u) {
+      var action = u.role === 'admin' ? '—' : '<button class="btn btn-secondary btn-sm" data-staff-status="' + u.id + '" data-next-status="' + (u.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE') + '">' + (u.status === 'ACTIVE' ? 'Disable' : 'Enable') + '</button> <button class="btn btn-secondary btn-sm" data-staff-reset="' + u.id + '">Reset password</button>';
+      return '<tr><td style="padding:8px;border-top:1px solid var(--border)">' + esc(u.name) + '</td><td style="padding:8px;border-top:1px solid var(--border)">' + esc(u.username) + '</td><td style="padding:8px;border-top:1px solid var(--border)">' + esc(String(u.role).toUpperCase()) + '</td><td style="padding:8px;border-top:1px solid var(--border)">' + esc(u.status) + '</td><td style="padding:8px;border-top:1px solid var(--border)">' + (u.last_login ? new Date(u.last_login).toLocaleString() : 'Never') + '</td><td style="padding:8px;border-top:1px solid var(--border)">' + action + '</td></tr>';
+    }).join('');
+    rows.querySelectorAll('[data-staff-status]').forEach(function(btn) { btn.onclick = function() { sfetch('/staff/' + btn.dataset.staffStatus + '/status', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:btn.dataset.nextStatus}) }).then(function(r){if(!r.ok) throw new Error('Could not update user.'); return r.json();}).then(loadStaffUsers).catch(function(e){staffMessage(e.message,'err');}); }; });
+    rows.querySelectorAll('[data-staff-reset]').forEach(function(btn) { btn.onclick = function() { var password = window.prompt('New password, at least 10 characters:'); if (!password) return; sfetch('/staff/' + btn.dataset.staffReset + '/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:password}) }).then(function(r){if(!r.ok) return r.json().then(function(d){throw new Error(d.detail || 'Could not reset password.');}); return r.json();}).then(function(){staffMessage('Password reset successfully.','ok');}).catch(function(e){staffMessage(e.message,'err');}); }; });
+  }).catch(function(e) { staffMessage(e.message, 'err'); });
+}
+var staffForm = document.getElementById('staffCreateForm');
+if (staffForm) staffForm.addEventListener('submit', function(event) {
+  event.preventDefault();
+  var password = document.getElementById('staffPassword').value;
+  if (password !== document.getElementById('staffConfirm').value) { staffMessage('Passwords do not match.', 'err'); return; }
+  var button = event.target.querySelector('button[type=submit]'); button.disabled = true; staffMessage('');
+  sfetch('/staff', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:document.getElementById('staffName').value.trim(), username:document.getElementById('staffUsername').value.trim(), email:document.getElementById('staffEmail').value.trim(), password:password, role:document.getElementById('staffRole').value}) }).then(function(r){return r.json().then(function(d){if(!r.ok) throw new Error(d.detail || 'Could not create user.'); return d;});}).then(function(){event.target.reset();staffMessage('User created successfully.','ok');loadStaffUsers();}).catch(function(e){staffMessage(e.message,'err');}).finally(function(){button.disabled=false;});
+});
+if (document.getElementById('staffPanel')) loadStaffUsers();
+document.getElementById('adminLogout').addEventListener('click', function() {
+  fetch('/auth/logout', { method:'POST', credentials:'include' }).finally(function() { window.location.href = '/login.html'; });
+});
+document.querySelectorAll('.staff-role').forEach(function(roleButton) {
+  roleButton.addEventListener('click', function() {
+    document.querySelectorAll('.staff-role').forEach(function(button) { button.classList.remove('active'); });
+    roleButton.classList.add('active');
+    document.getElementById('staffRole').value = roleButton.dataset.role;
+  });
+});
 </script>
 </body>
 </html>

@@ -1,8 +1,7 @@
 """Order lifecycle: place an order (after payment) and drive it through the
 kitchen workflow. Also exposes the kitchen's live list of active orders.
 """
-from __future__ import annotations
-
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +10,7 @@ from app.db import repository as repo
 from app.routes.deps import (
     get_db,
     require_staff,
+    tenant_matches,
     resolve_cart,
     resolve_session,
 )
@@ -230,12 +230,14 @@ async def my_orders(
 async def close_table(
     body: CloseTableRequest,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Manual override: force-close all active dine-in orders for a table."""
     rest = await repo.get_restaurant_by_slug(db, body.restaurant)
     if rest is None:
         raise HTTPException(status_code=404, detail="Unknown restaurant.")
+    if not tenant_matches(_principal, rest["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     n = await repo.close_table(db, rest["id"], body.table_number)
     return CloseTableResponse(table_number=body.table_number, closed=n)
 
@@ -245,12 +247,17 @@ async def kitchen_orders(
     restaurant: str = "demo",
     active_only: bool = True,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Kitchen display feed: orders for an outlet (active by default)."""
-    rest = await repo.get_restaurant_by_slug(db, restaurant)
+    if _principal.get("role") == "kitchen":
+        rest = await repo.get_restaurant_by_id(db, _principal["outletId"])
+    else:
+        rest = await repo.get_restaurant_by_slug(db, restaurant)
     if rest is None:
         return []
+    if not tenant_matches(_principal, rest["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     statuses = repo.ACTIVE_ORDER_STATUSES if active_only else None
     rows = await repo.list_orders(db, rest["id"], statuses)
     return [_to_order(r) for r in rows]
@@ -261,12 +268,16 @@ async def update_order(
     order_id: int,
     body: OrderStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Advance kitchen status and/or update payment verification."""
     existing = await repo.get_order(db, order_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Order not found.")
+    if not tenant_matches(_principal, existing["restaurant_id"]):
+        raise HTTPException(status_code=403, detail="Order is outside your tenant.")
+    if _principal.get("role") == "kitchen" and (body.payment_status is not None or body.status == "cancelled"):
+        raise HTTPException(status_code=403, detail="Kitchen users may only update kitchen order status.")
     if body.status:
         await repo.update_order_status(db, order_id, body.status)
     if body.payment_status:

@@ -206,7 +206,11 @@ export function fetchMenu() {
   }
   return fetch(api(url))
     .then(function (r) {
-      if (!r.ok) throw new Error("no menu");
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (error) {
+          throw new Error((error && error.detail) || "No menu found for this restaurant.");
+        });
+      }
       return r.json();
     })
     .then(function (data) {

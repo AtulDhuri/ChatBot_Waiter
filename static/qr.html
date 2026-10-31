@@ -54,7 +54,7 @@
       a.btnlink { color:#a855f7; }
     </style>
   </head>
-  <body>
+  <body><script src="/admin-header.js"></script>
     <div class="card controls">
       <h1>Generate table QR codes</h1>
       <p class="muted">
@@ -74,10 +74,7 @@
         </div>
       </div>
 
-      <label for="staff">Staff token</label>
-      <input id="staff" type="password" placeholder="Your STAFF_TOKEN" />
-      <p class="hint">
-        Required to mint table codes. This stays on this page and is sent only
+      <p class="hint">Sign in through DineOS before generating table codes. Authentication uses an HttpOnly cookie.</p>
         to your own server.
       </p>
 
@@ -116,13 +113,11 @@
       // Ask the server to mint (or return) the durable opaque token for this
       // table. The slug + staff token are used only for this authenticated
       // call; the token that comes back is what goes in the QR.
-      function mintToken(slug, table, staff) {
+      function mintToken(slug, table) {
         return fetch("/qr/token", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Staff-Token": staff,
-          },
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ restaurant: slug, table_number: table }),
         }).then(function (r) {
           if (!r.ok) {
@@ -168,7 +163,6 @@
       document.getElementById("go").addEventListener("click", function () {
         var slug = document.getElementById("restaurant").value.trim() || "demo";
         var table = document.getElementById("table").value.trim();
-        var staff = document.getElementById("staff").value.trim();
         var go = document.getElementById("go");
 
         if (!table) {
@@ -180,7 +174,7 @@
         var old = go.textContent;
         go.textContent = "Generating…";
 
-        mintToken(slug, table, staff)
+        mintToken(slug, table)
           .then(function (data) {
             var url =
               baseUrl() + "/?r=" + encodeURIComponent(data.token);

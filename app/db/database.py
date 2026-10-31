@@ -86,12 +86,84 @@ _SCHEMA_STATEMENTS = [
     "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS payment_mode TEXT NOT NULL DEFAULT 'prepaid';",
     "ALTER TABLE restaurants DROP CONSTRAINT IF EXISTS restaurants_payment_mode_check;",
     "ALTER TABLE restaurants ADD CONSTRAINT restaurants_payment_mode_check CHECK (payment_mode IN ('prepaid', 'postpaid'));",
-    # Printed-receipt header fields (name override, subtitle, address, FSSAI,
+    "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS tenant_id INTEGER;",
+    "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'TRIAL';",
+    """
+    CREATE TABLE IF NOT EXISTS tenants (
+        id INTEGER PRIMARY KEY,
+        restaurant_name TEXT NOT NULL,
+        restaurant_slug TEXT UNIQUE NOT NULL,
+        subscription_status TEXT NOT NULL DEFAULT 'TRIAL',
+        plan_type TEXT NOT NULL DEFAULT 'TRIAL',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS outlets (
+        id INTEGER PRIMARY KEY,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        outlet_name TEXT NOT NULL,
+        outlet_slug TEXT NOT NULL,
+        legacy_restaurant_id INTEGER UNIQUE NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (tenant_id, outlet_slug)
+    );
+    """,
+    """
+    INSERT INTO tenants (id, restaurant_name, restaurant_slug, subscription_status, plan_type)
+    SELECT id, name, slug, subscription_status, 'TRIAL' FROM restaurants
+    ON CONFLICT (id) DO UPDATE SET restaurant_name=EXCLUDED.restaurant_name,
+        restaurant_slug=EXCLUDED.restaurant_slug, subscription_status=EXCLUDED.subscription_status;
+    """,
+    """
+    INSERT INTO outlets (id, tenant_id, outlet_name, outlet_slug, legacy_restaurant_id)
+    SELECT id, id, name, slug, id FROM restaurants
+    ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,
+        outlet_name=EXCLUDED.outlet_name, outlet_slug=EXCLUDED.outlet_slug;
+    """,
+    "UPDATE restaurants SET tenant_id = id WHERE tenant_id IS NULL;",
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'restaurants_tenant_fk') THEN ALTER TABLE restaurants ADD CONSTRAINT restaurants_tenant_fk FOREIGN KEY (tenant_id) REFERENCES tenants(id); END IF; END $$;",
     # phone, GSTIN, footer). Stored as a JSONB blob so staff can edit the shop's
     # legal/receipt details from the manager dashboard without a schema change
     # per field. Defaults to an empty object; the receipt simply omits any blank.
-    "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS receipt_profile JSONB NOT NULL DEFAULT '{}'::jsonb;",
-    # Parsed menu chunks + embeddings. Dimension is interpolated from settings.
+    "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'TRIAL';",
+    "ALTER TABLE restaurants DROP CONSTRAINT IF EXISTS restaurants_subscription_status_check;",
+    "ALTER TABLE restaurants ADD CONSTRAINT restaurants_subscription_status_check CHECK (subscription_status IN ('TRIAL','ACTIVE','EXPIRED','SUSPENDED'));",
+    # Merchant identity and audit tables. Restaurants remain outlets; tenant_id
+    # is the merchant/restaurant owner boundary used by authenticated APIs.
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
+        tenant_id INTEGER NOT NULL, outlet_id INTEGER NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('admin','manager','kitchen','staff')),
+        active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT 'admin';",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ACTIVE';",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;",
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_tenant_fk') THEN ALTER TABLE users ADD CONSTRAINT users_tenant_fk FOREIGN KEY (tenant_id) REFERENCES tenants(id); END IF; END $$;",
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM users GROUP BY lower(username) HAVING count(*) > 1) THEN CREATE UNIQUE INDEX IF NOT EXISTS users_username_global_idx ON users(lower(username)); END IF; END $$;",
+    """
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id SERIAL PRIMARY KEY, event_type TEXT NOT NULL, user_id INTEGER,
+        tenant_id INTEGER, detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+        client_ip TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS audit_logs_event_idx ON audit_logs(event_type, created_at);",
+    """
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS password_reset_user_idx ON password_reset_tokens(user_id, expires_at);",
     """
     CREATE TABLE IF NOT EXISTS documents (
         id            SERIAL PRIMARY KEY,

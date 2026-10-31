@@ -6,14 +6,13 @@ sticker (``?r=<token>``). This module resolves that token to a tenant + table
 and id never cross the wire to the customer — the response carries only safe
 display fields (restaurant display name, table number, cart).
 """
-from __future__ import annotations
-
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import repository as repo
-from app.routes.deps import get_db, require_staff
+from app.routes.deps import get_db, require_staff, tenant_matches
 from app.schemas import (
     QrResolveRequest,
     QrSession,
@@ -128,7 +127,7 @@ async def resolve_qr(
 async def mint_token(
     body: QrTokenRequest,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Staff-only: get (or create) the durable opaque token for a table.
 
@@ -138,6 +137,8 @@ async def mint_token(
     rest = await repo.get_restaurant_by_slug(db, body.restaurant)
     if rest is None:
         raise HTTPException(status_code=404, detail="Unknown restaurant.")
+    if not tenant_matches(_principal, rest["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     table_number = body.table_number.strip()
     if not table_number:
         raise HTTPException(status_code=422, detail="Table number is required.")

@@ -16,7 +16,7 @@
     @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}}@media(max-width:760px){.shell{padding:20px 14px}.topbar{display:block}.top-actions{margin-top:15px}.grid{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.filter-group{flex:1;min-width:130px}.table-head{display:block}.table-tools{margin-top:12px}.search{width:100%}.donut-wrap{justify-content:center}.outlet-row{grid-template-columns:120px 1fr 70px 70px}}@media(max-width:450px){.kpi-value{font-size:20px}.kpi{padding:12px}.kpi-head{font-size:10px}.donut{width:140px;height:140px}.donut:after{inset:29px}}
   </style>
 </head>
-<body>
+<body><script src="/admin-header.js"></script>
   <main class="shell">
     <header class="topbar"><div><div class="eyebrow">DineOS Merchant Console</div><h1>Analytics overview</h1><p>Understand revenue and outlet performance at a glance.</p></div><div class="top-actions"><button class="btn" id="refresh">↻ Refresh</button><a class="btn" href="manager.html">Manager view</a></div></header>
     <section class="filters">
@@ -44,8 +44,8 @@
     </section>
   </main>
   <script>
-    var TOKEN_KEY="waiter_staff_token", state={data:null,rows:[],page:1,pageSize:10,sort:"date",dir:"desc"};
-    function token(){return localStorage.getItem(TOKEN_KEY)||""}function auth(url){return fetch(url,{headers:{"X-Staff-Token":token()}}).then(function(r){if(r.status===401){var t=prompt("Enter staff access token:",token());if(t!==null){localStorage.setItem(TOKEN_KEY,t.trim());throw Error("Please press Apply again.")}throw Error("Staff auth required")}return r})}
+    var state={data:null,rows:[],page:1,pageSize:10,sort:"date",dir:"desc"};
+    function token(){return ""}function auth(url){return fetch(url,{credentials:"include"}).then(function(r){if(r.status===401||r.status===402){location.href="/login.html";throw Error("Authentication required")}return r})}
     function pad(n){return n<10?"0"+n:n}function iso(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}function money(n){return (state.data&&state.data.currency||"$")+Number(n||0).toFixed(2)}function esc(s){return String(s).replace(/[&<>\"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]})}
     function setRange(kind){var to=new Date(),from=new Date();if(kind==="today"){}else if(kind==="7")from.setDate(to.getDate()-6);else if(kind==="30")from.setDate(to.getDate()-29);if(kind!=="custom"){document.getElementById("from").value=iso(from);document.getElementById("to").value=iso(to)}Array.prototype.forEach.call(document.querySelectorAll(".range-buttons button"),function(b){b.classList.toggle("active",b.getAttribute("data-range")==kind)})}
     function qs(){var p=new URLSearchParams();p.set("restaurant",document.getElementById("outlet").value);var f=document.getElementById("from").value,t=document.getElementById("to").value;if(f)p.set("date_from",f);if(t)p.set("date_to",t);return p.toString()}

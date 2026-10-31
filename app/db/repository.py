@@ -60,7 +60,36 @@ async def get_or_create_restaurant(
             {"slug": slug, "name": name, "update_name": bool(update_name and name)},
         )
     ).first()
-    return row[0]
+    restaurant_id = row[0]
+    await ensure_tenant_outlet(session, restaurant_id, name, slug)
+    return restaurant_id
+
+
+async def ensure_tenant_outlet(
+    session: AsyncSession, restaurant_id: int, name: str, slug: str
+) -> None:
+    """Keep the tenant/outlet ownership model synchronized with legacy rows."""
+    rest = await session.execute(
+        text("SELECT subscription_status FROM restaurants WHERE id=:rid"),
+        {"rid": restaurant_id},
+    )
+    subscription = (rest.first() or ["TRIAL"])[0]
+    await session.execute(text("""INSERT INTO tenants
+        (id, restaurant_name, restaurant_slug, subscription_status, plan_type)
+        VALUES (:id,:name,:slug,:subscription,'TRIAL')
+        ON CONFLICT (id) DO UPDATE SET restaurant_name=EXCLUDED.restaurant_name,
+          restaurant_slug=EXCLUDED.restaurant_slug,
+          subscription_status=EXCLUDED.subscription_status"""), {
+        "id": restaurant_id, "name": name, "slug": slug, "subscription": subscription or "TRIAL"
+    })
+    await session.execute(text("""INSERT INTO outlets
+        (id,tenant_id,outlet_name,outlet_slug,legacy_restaurant_id)
+        VALUES (:id,:id,:name,:slug,:id)
+        ON CONFLICT (id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,
+          outlet_name=EXCLUDED.outlet_name,outlet_slug=EXCLUDED.outlet_slug"""), {
+        "id": restaurant_id, "name": name, "slug": slug
+    })
+    await session.execute(text("UPDATE restaurants SET tenant_id=:id WHERE id=:id"), {"id": restaurant_id})
 
 
 async def get_restaurant_by_slug(
@@ -69,7 +98,7 @@ async def get_restaurant_by_slug(
     row = (
         await session.execute(
             text(
-                "SELECT id, slug, name, upi_vpa, upi_name, payment_mode "
+                "SELECT id, slug, name, upi_vpa, upi_name, payment_mode, subscription_status "
                 "FROM restaurants WHERE slug = :slug"
             ),
             {"slug": slug},
@@ -84,7 +113,7 @@ async def get_restaurant_by_id(
     row = (
         await session.execute(
             text(
-                "SELECT id, slug, name, upi_vpa, upi_name, payment_mode "
+                "SELECT id, slug, name, upi_vpa, upi_name, payment_mode, subscription_status "
                 "FROM restaurants WHERE id = :rid"
             ),
             {"rid": restaurant_id},

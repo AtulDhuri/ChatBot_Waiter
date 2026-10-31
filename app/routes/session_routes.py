@@ -18,12 +18,12 @@ async def create_session(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    # Do not overwrite an existing outlet's display name just by starting a
-    # session; the admin owns the name via menu upload.
-    restaurant_id = await repo.get_or_create_restaurant(
-        db, body.restaurant, body.restaurant.replace("-", " ").title()
-    )
-    rest = await repo.get_restaurant_by_id(db, restaurant_id)
+    # Customer sessions may use an existing outlet slug, but they must never
+    # provision a new tenant by calling this endpoint.
+    rest = await repo.get_restaurant_by_slug(db, body.restaurant.strip().lower())
+    if rest is None:
+        raise HTTPException(status_code=404, detail="Unknown restaurant. Scan a valid restaurant QR code.")
+    restaurant_id = rest["id"]
 
     # Validate the identifier for the chosen order type.
     table_number = body.table_number.strip()

@@ -274,8 +274,8 @@ export function showMenu() {
       renderList("");
       addMessage(null, "bot", wrap);
     })
-    .catch(function () {
-      addMessage("Sorry, I couldn't load the menu right now.", "bot");
+    .catch(function (error) {
+      addMessage("Sorry, I couldn't load the menu right now. " + (error && error.message ? error.message : "Please check the restaurant link."), "bot");
     });
 }
 

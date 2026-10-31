@@ -1,6 +1,8 @@
 """Application configuration loaded from environment variables."""
 from functools import lru_cache
 from typing import List
+from urllib.parse import urlparse
+import re
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -75,10 +77,15 @@ class Settings(BaseSettings):
     session_secret: str = Field(
         default="change-me-in-production", validation_alias="SESSION_SECRET"
     )
-    # Shared secret that staff pages (kitchen/reports/admin) must present to
-    # reach protected endpoints. If blank, protection is DISABLED (demo mode)
-    # — but ONLY outside production; in production a strong value is required.
+    # Legacy shared token retained only for backward compatibility. New admin
+    # access uses per-user JWTs and never accepts this value in a URL.
     staff_token: str = Field(default="", validation_alias="STAFF_TOKEN")
+    auth_jwt_secret: str = Field(default="change-me-auth-in-production", validation_alias="AUTH_JWT_SECRET")
+    auth_cookie_name: str = Field(default="dineos_access", validation_alias="AUTH_COOKIE_NAME")
+    auth_token_ttl_seconds: int = Field(default=3600, ge=300, le=86400, validation_alias="AUTH_TOKEN_TTL_SECONDS")
+    supabase_url: str = Field(default="", validation_alias="SUPABASE_URL")
+    supabase_anon_key: str = Field(default="", validation_alias="SUPABASE_ANON_KEY")
+    supabase_jwt_secret: str = Field(default="", validation_alias="SUPABASE_JWT_SECRET")
 
     # Sliding inactivity window for customer sessions. Kept short in production
     # to shrink the replay window for a captured token. Overridable via env.
@@ -137,6 +144,11 @@ class Settings(BaseSettings):
                 "STAFF_TOKEN is unset, weak, or too short "
                 f"(need >= {_MIN_SECRET_LEN} chars)"
             )
+        if self._is_weak_secret(self.auth_jwt_secret):
+            problems.append(
+                "AUTH_JWT_SECRET is unset, weak, or too short "
+                f"(need >= {_MIN_SECRET_LEN} chars)"
+            )
         if problems:
             raise ValueError(
                 "Refusing to start in production (APP_ENV="
@@ -168,6 +180,16 @@ class Settings(BaseSettings):
     @property
     def db_requires_ssl(self) -> bool:
         return "supabase" in self.database_url
+
+    @property
+    def resolved_supabase_url(self) -> str:
+        """Return the HTTPS project URL, deriving it from DATABASE_URL when possible."""
+        if self.supabase_url.strip().lower().startswith("http"):
+            return self.supabase_url.strip().rstrip("/")
+        host = urlparse(self.database_url).hostname or ""
+        match = re.search(r"(?:postgres|db)\.([a-z0-9]+)(?:\.pooler)?\.supabase\.co", host, re.I)
+        return f"https://{match.group(1)}.supabase.co" if match else ""
+
 
 
 @lru_cache

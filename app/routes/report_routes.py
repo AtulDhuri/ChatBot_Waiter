@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,16 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import repository as repo
-from app.routes.deps import get_db, require_staff
+from app.routes.deps import get_db, require_staff, tenant_matches
 from app.schemas import ReportResponse
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-async def _gather(db, restaurant, date_from, date_to):
+async def _gather(db, restaurant, date_from, date_to, principal):
     rest = await repo.get_restaurant_by_slug(db, restaurant)
     if rest is None:
         raise HTTPException(status_code=404, detail="Unknown restaurant.")
+    if not tenant_matches(principal, rest["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     data = await repo.sales_report(db, rest["id"], date_from, date_to)
     return rest, data
 
@@ -31,9 +33,9 @@ async def report(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
-    _, data = await _gather(db, restaurant, date_from, date_to)
+    _, data = await _gather(db, restaurant, date_from, date_to, _principal)
     return ReportResponse(
         restaurant=restaurant,
         date_from=date_from,
@@ -49,9 +51,9 @@ async def report_csv(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
-    _, data = await _gather(db, restaurant, date_from, date_to)
+    _, data = await _gather(db, restaurant, date_from, date_to, _principal)
 
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -82,7 +84,7 @@ async def analytics_dashboard(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Merchant analytics payload for the DineOS dashboard."""
     if restaurant == "all":
@@ -93,13 +95,16 @@ async def analytics_dashboard(
     rest = await repo.get_restaurant_by_slug(db, restaurant)
     if rest is None:
         raise HTTPException(status_code=404, detail="Unknown restaurant.")
+    if not tenant_matches(_principal, rest["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     return await repo.analytics_dashboard(db, restaurant, date_from, date_to)
 
 
 @router.get("/outlets")
 async def report_outlets(
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """List outlets available to the staff dashboard."""
-    return {"outlets": await repo.list_restaurants(db)}
+    outlet = await repo.get_restaurant_by_id(db, _principal["outletId"])
+    return {"outlets": ([{"slug": outlet["slug"], "name": outlet["name"]}] if outlet else [])}

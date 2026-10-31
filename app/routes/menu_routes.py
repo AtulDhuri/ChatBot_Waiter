@@ -4,11 +4,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repository as repo
-from app.routes.deps import get_db
+from app.routes.deps import get_db, tenant_matches
+from app.services.auth import decode_token, token_from_request
 from app.schemas import MenuItem, MenuResponse
 from app.services import pricing, sessions as sess
 
@@ -34,6 +35,7 @@ async def _zone_for_session(db: AsyncSession, session_id: Optional[str]) -> Opti
 async def get_menu(
     restaurant: Optional[str] = None,
     session_id: Optional[str] = None,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Return the menu, scoped to a tenant.
@@ -66,6 +68,11 @@ async def get_menu(
 
     if rest is None:
         raise HTTPException(status_code=404, detail="No menu loaded for this restaurant.")
+    admin_token = token_from_request(request) if request else None
+    if admin_token and not session_id:
+        principal = decode_token(admin_token)
+        if not tenant_matches(principal, rest["id"]):
+            raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
 
     # Zone: reuse the already-loaded session row when we have it, else resolve
     # from the token (slug path with a session_id), else base pricing.

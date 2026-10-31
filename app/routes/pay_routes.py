@@ -3,14 +3,13 @@
 This returns a UPI URI (and amount) the frontend renders as a QR. It is a
 display payment: there is no gateway and no confirmation callback.
 """
-from __future__ import annotations
-
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import repository as repo
-from app.routes.deps import get_db, require_staff, resolve_cart, resolve_session
+from app.routes.deps import get_db, require_staff, resolve_cart, resolve_session, tenant_matches
 from app.schemas import (
     PaymentModeInfo,
     PaymentModeUpdate,
@@ -42,7 +41,7 @@ async def get_upi(restaurant: str = "demo", db: AsyncSession = Depends(get_db)):
 async def set_upi(
     body: UpiUpdate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Set/update a restaurant's UPI payee without re-uploading the menu."""
     if not payments.is_valid_vpa(body.upi_vpa):
@@ -50,10 +49,9 @@ async def set_upi(
             status_code=400,
             detail="Invalid UPI ID. Expected format: name@bank",
         )
-    # Ensure the restaurant row exists so a UPI can be set before a menu upload.
-    await repo.get_or_create_restaurant(
-        db, body.restaurant, body.restaurant.replace("-", " ").title()
-    )
+    existing = await repo.get_restaurant_by_slug(db, body.restaurant)
+    if existing is None or not tenant_matches(_principal, existing["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     await repo.set_restaurant_upi(db, body.restaurant, body.upi_vpa, body.upi_name)
     return UpiInfo(
         restaurant=body.restaurant,
@@ -76,11 +74,11 @@ async def get_payment_mode(
 async def set_payment_mode(
     body: PaymentModeUpdate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
-    await repo.get_or_create_restaurant(
-        db, body.restaurant, body.restaurant.replace("-", " ").title()
-    )
+    existing = await repo.get_restaurant_by_slug(db, body.restaurant)
+    if existing is None or not tenant_matches(_principal, existing["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     await repo.set_restaurant_payment_mode(db, body.restaurant, body.payment_mode)
     return PaymentModeInfo(
         restaurant=body.restaurant, payment_mode=body.payment_mode

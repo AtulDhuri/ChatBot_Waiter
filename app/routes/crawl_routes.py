@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import os
 import re
-import tempfile
+from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repository as repo
-from app.routes.deps import get_db, require_staff
+from app.routes.deps import get_db, require_staff, tenant_matches
 from app.schemas import CrawlResponse, MenuJsonIn
 from app.services.ingest import ingest_menu_json, ingest_pdf
 
@@ -34,7 +34,7 @@ async def crawl(
     upi_vpa: str = Form(default=""),
     upi_name: str = Form(default=""),
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Parse an uploaded PDF menu into chunks, embeddings and menu items.
 
@@ -48,6 +48,9 @@ async def crawl(
     # value always maps to one tenant (e.g. 'demo_dombivl' and 'demo-dombivl'
     # collapse to the same 'demo-dombivl'), preventing duplicate restaurants.
     slug = _slugify(restaurant)
+    owner = await repo.get_restaurant_by_slug(db, slug)
+    if owner is None or not tenant_matches(_principal, owner["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     display_name = name.strip() or slug.replace("-", " ").title()
     suffix = os.path.splitext(file.filename or "menu.pdf")[1] or ".pdf"
     tmp_path = None
@@ -85,7 +88,7 @@ async def crawl(
 async def crawl_json(
     body: MenuJsonIn,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Ingest a structured JSON menu directly — no PDF, no regex extractor.
 
@@ -120,6 +123,9 @@ async def crawl_json(
     # display name prefers an explicit 'name', else the original 'restaurant'
     # string, else a title-cased slug.
     slug = _slugify(body.restaurant)
+    owner = await repo.get_restaurant_by_slug(db, slug)
+    if owner is None or not tenant_matches(_principal, owner["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     display_name = (
         body.name.strip()
         or (body.restaurant.strip() if body.restaurant.strip() else "")

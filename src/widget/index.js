@@ -31,11 +31,9 @@ function boot() {
     if (!CONFIG.apiBase && window.WAITER_CONFIG.apiBase)
       CONFIG.apiBase = window.WAITER_CONFIG.apiBase;
   }
-  // Title: token flow waits for /qr/resolve; legacy slug can title-case as a
-  // placeholder until the menu/name loads.
-  if (!IS_TOKEN && LEGACY_SLUG && LEGACY_SLUG !== "demo") {
-    CONFIG.title = titleFromSlug(LEGACY_SLUG);
-  } else if (window.WAITER_CONFIG && window.WAITER_CONFIG.name) {
+  // Keep the slug as a routing identifier only. Never show it as the
+  // restaurant name; fetchMenu() replaces the generic title with the DB name.
+  if (window.WAITER_CONFIG && window.WAITER_CONFIG.name && (!LEGACY_SLUG || LEGACY_SLUG === "demo")) {
     CONFIG.title = window.WAITER_CONFIG.name;
   }
   injectStyles();

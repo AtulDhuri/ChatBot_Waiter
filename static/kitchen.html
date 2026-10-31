@@ -88,20 +88,22 @@
       .card.ready { border-left-color:#22c55e; }
       .empty { color:#94a3b8; }
     </style>
-  </head>
-  <body>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+  <body><script src="/admin-header.js"></script>
     <header>
       <h1>🍳 Kitchen Display</h1>
       <span class="tbl"><span class="dot"></span><span id="live">live</span></span>
       <div class="spacer"></div>
-      <label class="tbl">Restaurant
+      <label class="tbl manager-only">Restaurant
         <input id="restaurant" type="text" value="demo" />
       </label>
-      <label class="tbl">Close table #
+      <label class="tbl manager-only">Close table #
         <input id="closeTable" type="text" placeholder="e.g. 7" style="width:80px" />
       </label>
-      <button id="closeBtn">Close table</button>
-      <button id="tokenBtn" style="background:#444">🔑 Token</button>
+      <button id="closeBtn" class="manager-only">Close table</button>
+      <button id="tokenBtn" class="manager-only" style="background:#444">🔑 Token</button>
+      <button id="logoutBtn" style="background:#8a2433">Log out</button>
     </header>
 
     <div id="err" class="err"></div>
@@ -111,34 +113,19 @@
     </div>
 
     <script>
-      var POLL_MS = 4000;
+      var POLL_MS = 8000;
       var grid = document.getElementById("grid");
       var emptyEl = document.getElementById("empty");
       var errEl = document.getElementById("err");
       var liveEl = document.getElementById("live");
 
-      // ---- Staff auth: token in localStorage, sent as X-Staff-Token. ----
-      var TOKEN_KEY = "waiter_staff_token";
-      function getToken() {
-        return localStorage.getItem(TOKEN_KEY) || "";
-      }
-      function sfetch(url, opts) {
-        opts = opts || {};
-        opts.headers = opts.headers || {};
-        opts.headers["X-Staff-Token"] = getToken();
-        return fetch(url, opts).then(function (r) {
-          if (r.status === 401) {
-            promptToken(true);
-            throw new Error("Staff authentication required");
-          }
-          return r;
-        });
-      }
-      function promptToken(force) {
-        if (!force && getToken()) return;
-        var t = window.prompt("Enter staff access token:", getToken());
-        if (t !== null) localStorage.setItem(TOKEN_KEY, t.trim());
-      }
+      // JWT is an HttpOnly cookie; pages never store credentials.
+      var currentRole = "";
+      var realtimeActive = false;
+      var realtimeClient = null;
+      function getToken() { return ""; }
+      function promptToken(force) { if (force) location.href="/login.html"; }
+      function sfetch(url, opts) { opts=opts||{}; opts.credentials="include"; return fetch(url, opts).then(function(r){ if(r.status===401||r.status===402){location.href="/login.html";throw Error("Authentication required");} return r; }); }
 
       function restaurant() {
         var u = new URLSearchParams(location.search).get("r");
@@ -148,8 +135,8 @@
 
       // Kitchen flow: New -> Preparing -> Served. The customer sees this as
       // Placed -> Preparing -> Served. Payment is a separate staff action.
-      var NEXT = { new: "preparing", preparing: "served", ready: "served" };
-      var NEXT_LABEL = { new: "Start", preparing: "Served", ready: "Served" };
+      var NEXT = { new: "preparing", preparing: "ready", ready: "served" };
+      var NEXT_LABEL = { new: "Start cooking", preparing: "Mark ready", ready: "Mark served" };
 
       function esc(s) {
         return String(s).replace(/[&<>]/g, function (c) {
@@ -250,14 +237,21 @@
           var actions = document.createElement("div");
           actions.className = "actions";
 
-          // Disable all buttons in a card while any action on it is in flight.
+          // Update card UI instantly, then sync in background
           function lock(btn, promise) {
             var btns = actions.querySelectorAll("button");
             Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
-            var release = function () {
+            promise.then(function(updated) {
+              // patch the card inline without waiting for a full poll
+              if (updated && updated.status) {
+                card.className = "card " + updated.status;
+              }
+              // background sync
+              poll();
+            }, function (e) {
               Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
-            };
-            promise.then(poll).then(release, function (e) { release(); showErr(e); });
+              showErr(e);
+            });
           }
 
           if (NEXT[o.status]) {
@@ -269,14 +263,16 @@
             };
             actions.appendChild(adv);
           }
-          var cancel = document.createElement("button");
-          cancel.className = "b-cancel";
-          cancel.textContent = "Cancel";
-          cancel.onclick = function () {
-            if (confirm("Cancel order " + o.order_no + "?"))
-              lock(cancel, patch(o.id, { status: "cancelled" }));
-          };
-          actions.appendChild(cancel);
+          if (o.status !== "cancelled" && currentRole !== "kitchen") {
+            var cancel = document.createElement("button");
+            cancel.className = "b-cancel";
+            cancel.textContent = "Cancel";
+            cancel.onclick = function () {
+              if (confirm("Cancel order " + o.order_no + "?"))
+                lock(cancel, patch(o.id, { status: "cancelled" }));
+            };
+            actions.appendChild(cancel);
+          }
 
           card.appendChild(actions);
           return card;
@@ -286,7 +282,10 @@
         errEl.textContent = "Error: " + e.message;
       }
 
+      var pollInFlight = false;
       function poll() {
+        if (pollInFlight || document.hidden) return Promise.resolve();
+        pollInFlight = true;
         return sfetch(
           "/orders?restaurant=" + encodeURIComponent(restaurant()) +
             "&active_only=true"
@@ -296,7 +295,8 @@
             return r.json();
           })
           .then(render)
-          .catch(showErr);
+          .catch(showErr)
+          .finally(function () { pollInFlight = false; });
       }
 
       document.getElementById("closeBtn").addEventListener("click", function () {
@@ -321,13 +321,49 @@
         poll();
       });
 
-      // Blink the live indicator each poll.
-      restaurant();
-      promptToken(false); // ask once if no token stored yet
-      poll();
+      document.getElementById("logoutBtn").addEventListener("click", function () {
+        fetch("/auth/logout", { method: "POST", credentials: "include" }).finally(function () { location.href = "/kitchen-login"; });
+      });
+      function setupRealtime(identity) {
+        if (!window.supabase || !identity || !identity.outletId) return Promise.resolve(false);
+        return fetch("/auth/realtime-token", { credentials: "include" })
+          .then(function (r) { if (!r.ok) throw new Error("Realtime not configured"); return r.json(); })
+          .then(function (config) {
+            realtimeClient = window.supabase.createClient(config.url, config.anonKey, {
+              accessToken: function () { return Promise.resolve(config.accessToken); }
+            });
+            var channel = realtimeClient.channel("kitchen-outlet-" + config.outletId, { config: { private: true } });
+            channel.on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: "restaurant_id=eq." + config.outletId }, function () {
+              poll();
+            });
+            return new Promise(function (resolve) {
+              channel.subscribe(function (status) {
+                if (status === "SUBSCRIBED") { realtimeActive = true; resolve(true); }
+                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") resolve(false);
+              });
+            });
+          })
+          .catch(function () { realtimeActive = false; return false; });
+      }
+
+      function loadIdentity() {
+        return fetch("/auth/me", { credentials: "include" }).then(function (r) {
+          if (!r.ok) throw new Error("Authentication required");
+          return r.json();
+        }).then(function (me) {
+          currentRole = me.role || "";
+          if (currentRole === "kitchen") {
+            Array.prototype.forEach.call(document.querySelectorAll(".manager-only"), function (el) { el.style.display = "none"; });
+            document.querySelector("h1").textContent = "Kitchen Portal";
+          }
+          return setupRealtime(me).then(function () { return poll(); });
+        }).catch(function () { location.href = "/kitchen-login"; });
+      }
+
+      loadIdentity();
       setInterval(function () {
         liveEl.textContent = liveEl.textContent === "live" ? "·live·" : "live";
-        poll();
+        if (!realtimeActive) poll();
       }, POLL_MS);
     </script>
   </body>

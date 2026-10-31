@@ -153,7 +153,7 @@
       button.mark-unpaid { background:rgba(245,158,11,.12); color:#fbbf24; border-color:#a16207; }
     </style>
   </head>
-  <body>
+  <body><script src="/admin-header.js"></script>
     <header>
       <h1>📊 Manager Dashboard</h1>
       <div class="spacer"></div>
@@ -241,22 +241,9 @@
     <div id="receipt"></div>
 
     <script>
-      var TOKEN_KEY = "waiter_staff_token";
-      function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
-      function promptToken(force) {
-        if (!force && getToken()) return;
-        var t = window.prompt("Enter staff access token:", getToken());
-        if (t !== null) localStorage.setItem(TOKEN_KEY, t.trim());
-      }
-      function sfetch(url, opts) {
-        opts = opts || {};
-        opts.headers = opts.headers || {};
-        opts.headers["X-Staff-Token"] = getToken();
-        return fetch(url, opts).then(function (r) {
-          if (r.status === 401) { promptToken(true); throw new Error("Staff authentication required"); }
-          return r;
-        });
-      }
+      function getToken() { return ""; }
+      function promptToken(force) { if (force) location.href="/login.html"; }
+      function sfetch(url, opts) { opts=opts||{}; opts.credentials="include"; return fetch(url, opts).then(function(r){ if(r.status===401||r.status===402){location.href="/login.html";throw Error("Authentication required");} return r; }); }
 
       var cardsEl = document.getElementById("cards");
       var emptyEl = document.getElementById("empty");
@@ -396,27 +383,51 @@
             printReceipt(ORDERS[btn.getAttribute("data-id")]);
           });
         });
-        // Payment is independent of kitchen status and is available for both
-        // prepaid (paid_unverified) and postpaid (unpaid) orders.
+        // Payment status: update the card instantly, refresh in background.
         Array.prototype.forEach.call(cardsEl.querySelectorAll("button.mark-paid, button.mark-unpaid"), function (btn) {
           btn.addEventListener("click", function () {
             btn.disabled = true;
             var isPaid = btn.getAttribute("data-payment") === "paid";
-            sfetch("/order/" + encodeURIComponent(btn.getAttribute("data-id")), {
+            var orderId = btn.getAttribute("data-id");
+            var card = btn.closest(".bill");
+            // Optimistic UI: flip the button label immediately
+            if (card) {
+              var otherBtn = card.querySelector(isPaid ? ".mark-paid" : ".mark-unpaid");
+              if (otherBtn) {
+                otherBtn.className = isPaid ? "mark-unpaid" : "mark-paid";
+                otherBtn.setAttribute("data-payment", isPaid ? "unpaid" : "paid");
+                otherBtn.textContent = isPaid ? "↩ Mark bill UNPAID" : "✓ Mark bill PAID";
+                otherBtn.disabled = false;
+              }
+              if (ORDERS[orderId]) {
+                ORDERS[orderId].payment_status = isPaid ? "verified" : "unpaid";
+              }
+            }
+            sfetch("/order/" + encodeURIComponent(orderId), {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                payment_status: isPaid ? "verified" : "unpaid",
-              }),
+              body: JSON.stringify({ payment_status: isPaid ? "verified" : "unpaid" }),
             })
               .then(function (r) {
                 if (!r.ok) throw new Error("Could not change payment status");
                 return r.json();
               })
-              .then(load)
+              .then(function () {
+                // Quiet background sync to catch any concurrent changes
+                sfetch("/manager/orders?" + query())
+                  .then(function (r) { return r.ok ? r.json() : null; })
+                  .then(function (orders) {
+                    if (!orders) return;
+                    var sig = signature(orders);
+                    if (sig !== _lastSig) { _lastSig = sig; render(orders); }
+                  })
+                  .catch(function () {});
+              })
               .catch(function (e) {
+                // Rollback optimistic update on error
                 btn.disabled = false;
                 errEl.textContent = e.message;
+                load();
               });
           });
         });

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DineOS | Merchant access</title>
+  <style>
+    :root{color-scheme:light;--ink:#182230;--muted:#667085;--line:#d9dee8;--brand:#1769e0;--brand-dark:#0f4fb0;--bg:#f4f7fb;--danger:#b42318;--success:#087443}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 0,#dceaff 0,transparent 35%),var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);display:grid;place-items:center;padding:24px}
+    .shell{width:min(100%,980px);display:grid;grid-template-columns:1fr 430px;overflow:hidden;border:1px solid #e4e9f1;border-radius:24px;background:#fff;box-shadow:0 24px 70px #1a37651f}
+    .intro{padding:58px 52px;background:linear-gradient(145deg,#102c57,#1769e0);color:#fff;position:relative;overflow:hidden}.intro:after{content:"";position:absolute;width:310px;height:310px;border:1px solid #ffffff33;border-radius:50%;right:-130px;bottom:-130px;box-shadow:0 0 0 30px #ffffff0d,0 0 0 60px #ffffff08}
+    .brand{font-weight:800;letter-spacing:-.04em;font-size:26px}.eyebrow{margin:70px 0 14px;text-transform:uppercase;letter-spacing:.16em;font-size:12px;font-weight:700;color:#bcd6ff}.intro h1{font-size:42px;line-height:1.06;letter-spacing:-.05em;margin:0 0 20px;max-width:390px}.intro p{color:#d9e7ff;line-height:1.65;max-width:390px}.benefits{list-style:none;padding:18px 0 0;margin:0;display:grid;gap:14px;color:#eef5ff}.benefits li:before{content:"✓";display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#ffffff24;margin-right:10px;font-weight:800}
+    .panel{padding:42px 40px}.panel h2{font-size:28px;letter-spacing:-.04em;margin:0 0 8px}.sub{color:var(--muted);margin:0 0 26px;font-size:14px}.tabs{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line);margin-bottom:24px}.tab{border:0;background:transparent;padding:12px 8px;color:var(--muted);font-weight:700;cursor:pointer;border-bottom:2px solid transparent}.tab.active{color:var(--brand);border-color:var(--brand)}.form{display:none}.form.active{display:block}.field{margin-bottom:16px}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:7px}.field input{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font:inherit;outline:none;transition:.15s}.field input:focus{border-color:var(--brand);box-shadow:0 0 0 3px #1769e01c}.hint{font-size:12px;color:var(--muted);margin:6px 0 0;line-height:1.45}.slug-status{font-size:12px;margin-top:6px;min-height:17px}.slug-status.ok{color:var(--success)}.slug-status.bad{color:var(--danger)}.submit{width:100%;border:0;border-radius:9px;padding:13px;background:var(--brand);color:#fff;font:700 15px inherit;cursor:pointer;margin-top:7px}.submit:hover{background:var(--brand-dark)}.submit:disabled{opacity:.55;cursor:not-allowed}.message{min-height:21px;font-size:13px;margin:15px 0 0}.message.error{color:var(--danger)}.message.success{color:var(--success)}.legal{font-size:12px;line-height:1.5;color:var(--muted);margin:22px 0 0}.password-note{font-size:12px;color:var(--muted);margin-top:-7px;margin-bottom:15px}
+    @media(max-width:760px){.shell{grid-template-columns:1fr}.intro{padding:30px 28px}.intro .eyebrow{margin-top:38px}.intro h1{font-size:34px}.benefits{display:none}.panel{padding:32px 25px}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="intro" aria-label="DineOS merchant platform">
+      <div class="brand">DineOS</div>
+      <div class="eyebrow">Merchant workspace</div>
+      <h1>Run your restaurant from one place.</h1>
+      <p>Manage menus, tables, kitchen orders, sales, and reports with secure tenant-isolated access.</p>
+      <ul class="benefits"><li>Secure merchant login</li><li>Outlet-specific operations</li><li>Real-time kitchen workflow</li></ul>
+    </section>
+    <section class="panel">
+      <h2 id="title">Welcome back</h2>
+      <p class="sub" id="subtitle">Sign in to manage your restaurant.</p>
+      <div class="tabs" role="tablist"><button class="tab active" id="loginTab" role="tab">Sign in</button><button class="tab" id="registerTab" role="tab">Create account</button></div>
+
+      <form id="loginForm" class="form active" novalidate>
+        <div class="field"><label for="loginEmail">Admin email or username</label><input id="loginEmail" type="text" autocomplete="username" placeholder="admin email or username" required></div>
+        <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter your password" required></div>
+        <button class="submit" type="submit">Sign in to DineOS</button><p class="message" id="loginMessage" role="alert"></p>
+      </form><p class="legal" id="forgotLink"><a href="/forgot-password">Forgot your password?</a></p>
+
+      <form id="registerForm" class="form" novalidate>
+        <div class="field"><label for="registerName">Restaurant name</label><input id="registerName" type="text" autocomplete="organization" placeholder="The Garden Bistro" maxlength="120" required></div>
+        <div class="field"><label for="registerSlug">Unique outlet slug</label><input id="registerSlug" type="text" placeholder="the-garden-bistro" maxlength="64" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required><div class="slug-status" id="slugStatus"></div><p class="hint">Used for routing and QR links. Lowercase letters, numbers, and hyphens only.</p></div>
+        <div class="field"><label for="registerEmail">Work email</label><input id="registerEmail" type="email" autocomplete="email" placeholder="you@restaurant.com" required></div>
+        <div class="field"><label for="registerPassword">Password</label><input id="registerPassword" type="password" autocomplete="new-password" minlength="10" placeholder="At least 10 characters" required></div>
+        <div class="field"><label for="confirmPassword">Confirm password</label><input id="confirmPassword" type="password" autocomplete="new-password" placeholder="Re-enter your password" required></div>
+        <p class="password-note">Your account starts with administrator access for this outlet.</p>
+        <button class="submit" id="registerButton" type="submit">Create merchant account</button><p class="message" id="registerMessage" role="alert"></p>
+      </form>
+      <p class="legal">By continuing, you agree to use DineOS only for your authorized restaurant operations.</p><p class="legal"><a href="/manager-login">Manager Portal</a> · <a href="/kitchen-login">Kitchen Portal</a></p>
+    </section>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    const loginTab = $('loginTab'), registerTab = $('registerTab'), loginForm = $('loginForm'), registerForm = $('registerForm');
+    function show(mode) { const login = mode === 'login'; loginTab.classList.toggle('active', login); registerTab.classList.toggle('active', !login); loginForm.classList.toggle('active', login); registerForm.classList.toggle('active', !login); $('forgotLink').style.display = login ? 'block' : 'none'; $('title').textContent = login ? 'Welcome back' : 'Create your account'; $('subtitle').textContent = login ? 'Sign in to manage your restaurant.' : 'Set up secure access for your restaurant.'; }
+    loginTab.onclick = () => show('login'); registerTab.onclick = () => show('register'); show('login');
+    function setMessage(id, text, type='error') { const el=$(id); el.textContent=text; el.className='message '+type; }
+    async function readResponse(response) { const data=await response.json().catch(()=>({})); if(!response.ok) throw new Error(typeof data.detail==='string'?data.detail:'Request failed.'); return data; }
+    $('loginForm').onsubmit = async event => { event.preventDefault(); setMessage('loginMessage',''); const button=event.target.querySelector('button'); button.disabled=true; try { const d=await readResponse(await fetch('/auth/login',{method:'POST',headers:{'content-type':'application/json'},credentials:'include',body:JSON.stringify({email:$('loginEmail').value.trim(),password:$('loginPassword').value})})); const next=new URLSearchParams(location.search).get('next'); location.href=next||d.redirect||'/admin.html'; } catch(error) { setMessage('loginMessage',error.message); button.disabled=false; } };
+    let slugTimer;
+    $('registerSlug').oninput = () => { clearTimeout(slugTimer); const value=$('registerSlug').value.trim().toLowerCase(); $('slugStatus').textContent=''; $('slugStatus').className='slug-status'; if(!value)return; if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)){ $('slugStatus').textContent='Use lowercase letters, numbers, and hyphens.'; $('slugStatus').className='slug-status bad'; return; } slugTimer=setTimeout(async()=>{ try { const data=await readResponse(await fetch('/auth/check-slug?slug='+encodeURIComponent(value))); $('slugStatus').textContent=data.available?'Slug is available.':'Slug is already in use.'; $('slugStatus').className='slug-status '+(data.available?'ok':'bad'); } catch(error) { $('slugStatus').textContent='Could not check slug availability.'; $('slugStatus').className='slug-status bad'; } },300); };
+    $('registerForm').onsubmit = async event => { event.preventDefault(); setMessage('registerMessage',''); const slug=$('registerSlug').value.trim().toLowerCase(), password=$('registerPassword').value; if(password!==$('confirmPassword').value){setMessage('registerMessage','Passwords do not match.');return} if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)){setMessage('registerMessage','Enter a valid unique outlet slug.');return} const button=$('registerButton');button.disabled=true;try{await readResponse(await fetch('/auth/register',{method:'POST',headers:{'content-type':'application/json'},credentials:'include',body:JSON.stringify({email:$('registerEmail').value.trim(),password,restaurant:slug,name:$('registerName').value.trim()})}));location.href='/admin.html?r='+encodeURIComponent(slug)}catch(error){setMessage('registerMessage',error.message);button.disabled=false}};
+  </script>
+</body>
+</html>

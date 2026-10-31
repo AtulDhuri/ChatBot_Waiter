@@ -93,7 +93,7 @@
       .toast { background:#0f172a; color:#f8fafc; }
     </style>
   </head>
-  <body>
+  <body><script src="/admin-header.js"></script>
     <header>
       <h1>🍽️ Dish Availability</h1>
       <div class="spacer"></div>
@@ -126,22 +126,9 @@
     <div id="toast" class="toast"></div>
 
     <script>
-      var TOKEN_KEY = "waiter_staff_token";
-      function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
-      function promptToken(force) {
-        if (!force && getToken()) return;
-        var t = window.prompt("Enter staff access token:", getToken());
-        if (t !== null) localStorage.setItem(TOKEN_KEY, t.trim());
-      }
-      function sfetch(url, opts) {
-        opts = opts || {};
-        opts.headers = opts.headers || {};
-        opts.headers["X-Staff-Token"] = getToken();
-        return fetch(url, opts).then(function (r) {
-          if (r.status === 401) { promptToken(true); throw new Error("Staff authentication required"); }
-          return r;
-        });
-      }
+      function getToken() { return ""; }
+      function promptToken(force) { if (force) location.href="/login.html"; }
+      function sfetch(url, opts) { opts=opts||{}; opts.credentials="include"; return fetch(url, opts).then(function(r){ if(r.status===401||r.status===402){location.href="/login.html";throw Error("Authentication required");} return r; }); }
 
       var listEl = document.getElementById("list");
       var emptyEl = document.getElementById("empty");

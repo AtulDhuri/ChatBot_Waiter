@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import repository as repo
-from app.routes.deps import get_db, require_staff
+from app.routes.deps import get_db, require_staff, tenant_matches
 from app.schemas import (
     ManagerOrder,
     ReceiptProfile,
@@ -37,10 +37,12 @@ def _iso(value) -> str:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
-async def _resolve_restaurant(db: AsyncSession, slug: str):
+async def _resolve_restaurant(db: AsyncSession, slug: str, principal: Dict[str, Any]):
     rest = await repo.get_restaurant_by_slug(db, slug)
     if rest is None:
         raise HTTPException(status_code=404, detail="Unknown restaurant.")
+    if not tenant_matches(principal, rest["id"]):
+        raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
     return rest
 
 
@@ -70,11 +72,11 @@ async def manager_orders(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """All orders for an outlet (newest first) with items, instructions,
     billing and zone. Optional filters: status, date_from, date_to."""
-    rest = await _resolve_restaurant(db, restaurant)
+    rest = await _resolve_restaurant(db, restaurant, _principal)
     rows = await repo.list_manager_orders(
         db, rest["id"], status=status, date_from=date_from, date_to=date_to
     )
@@ -88,11 +90,11 @@ async def manager_orders_csv(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Export the (filtered) order list as CSV, one row per line item so
     instructions are visible per dish."""
-    rest = await _resolve_restaurant(db, restaurant)
+    rest = await _resolve_restaurant(db, restaurant, _principal)
     rows = await repo.list_manager_orders(
         db, rest["id"], status=status, date_from=date_from, date_to=date_to
     )
@@ -150,11 +152,11 @@ async def manager_orders_csv(
 async def get_receipt_profile(
     restaurant: str = "demo",
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Return the outlet's printed-receipt header fields (shared across
     devices). Missing fields come back as empty strings."""
-    rest = await _resolve_restaurant(db, restaurant)
+    rest = await _resolve_restaurant(db, restaurant, _principal)
     profile = await repo.get_receipt_profile(db, rest["id"])
     return ReceiptProfile(**{**ReceiptProfile().model_dump(), **profile})
 
@@ -163,10 +165,10 @@ async def get_receipt_profile(
 async def save_receipt_profile(
     body: ReceiptProfileUpdate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Persist the receipt header fields for an outlet."""
-    rest = await _resolve_restaurant(db, body.restaurant)
+    rest = await _resolve_restaurant(db, body.restaurant, _principal)
     profile = body.model_dump(exclude={"restaurant"})
     saved = await repo.set_receipt_profile(db, rest["id"], profile)
     return ReceiptProfile(**{**ReceiptProfile().model_dump(), **saved})
@@ -184,7 +186,7 @@ async def manager_security(
     within_minutes: int = 60,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Recent security events + a poll-able anomaly signal for this outlet.
 
@@ -192,7 +194,7 @@ async def manager_security(
     from a different device/UA than it was bound to) and alert when activity
     spikes past a threshold.
     """
-    rest = await _resolve_restaurant(db, restaurant)
+    rest = await _resolve_restaurant(db, restaurant, _principal)
     recent = await security.count_recent_replays(
         db, rest["id"], within_minutes=within_minutes
     )
@@ -222,9 +224,9 @@ async def manager_security(
 async def manager_tables(
     restaurant: str = "demo",
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
-    rest = await _resolve_restaurant(db, restaurant)
+    rest = await _resolve_restaurant(db, restaurant, _principal)
     rows = await repo.list_tables(db, rest["id"])
     return [
         TableZone(id=r["id"], table_number=r["table_number"], zone=r["zone"])
@@ -236,9 +238,9 @@ async def manager_tables(
 async def manager_upsert_table(
     body: TableUpsertRequest,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
-    rest = await _resolve_restaurant(db, body.restaurant)
+    rest = await _resolve_restaurant(db, body.restaurant, _principal)
     row = await repo.upsert_table(
         db, rest["id"], body.table_number.strip(), body.zone.strip()
     )
@@ -255,10 +257,10 @@ async def manager_set_availability(
     body: MenuAvailabilityUpdate,
     restaurant: str = "demo",
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_staff),
+    _principal: Dict[str, Any] = Depends(require_staff),
 ):
     """Live-toggle a dish's sold-out state without re-uploading the menu."""
-    rest = await _resolve_restaurant(db, restaurant)
+    rest = await _resolve_restaurant(db, restaurant, _principal)
     updated = await repo.set_menu_item_available(
         db, rest["id"], item_id, body.available
     )
