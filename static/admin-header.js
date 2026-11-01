@@ -9,9 +9,10 @@
   header.className = 'dineos-global-header';
   header.innerHTML = '<div class="brand">DineOS</div><div class="outlet" id="globalOutlet">Restaurant</div><nav id="globalNav"></nav><button class="logout" id="globalLogout" type="button">Log out</button>';
   document.body.insertBefore(header, document.body.firstChild);
+
   function render(role, outletSlug, displayName) {
     slug = outletSlug || slug;
-    document.getElementById('globalOutlet').textContent = displayName || slug ? (displayName || slug) : 'Merchant console';
+    document.getElementById('globalOutlet').textContent = displayName || slug || 'Merchant console';
     var links = [];
     if (role === 'admin') links.push(['Admin setup', '/admin.html?r=' + encodeURIComponent(slug)]);
     if (role === 'admin' || role === 'manager') links.push(['Manager', '/manager.html?r=' + encodeURIComponent(slug)], ['Reports', '/reports.html?r=' + encodeURIComponent(slug)]);
@@ -19,16 +20,39 @@
     if (role === 'admin') links.push(['Settings', '/settings.html']);
     document.getElementById('globalNav').innerHTML = links.map(function (link) { return '<a href="' + link[1] + '">' + link[0] + '</a>'; }).join('');
   }
-  // Logout: redirect to role-appropriate login page
+
+  // Logout: clear the cookie and redirect to the right login page.
   document.getElementById('globalLogout').onclick = function () {
     var role = '';
-    fetch('/auth/me', {credentials:'include'}).then(function(r){return r.ok?r.json():null;}).then(function(id){ role = id && id.role; }).catch(function(){}).finally(function(){
-      fetch('/auth/logout', {method:'POST', credentials:'include'}).finally(function () {
-        if (role === 'kitchen') { location.href='/kitchen-login'; }
-        else if (role === 'manager') { location.href='/manager-login'; }
-        else { location.href='/login.html'; }
+    fetch('/auth/me', {credentials:'include'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(id){ role = id && id.role; })
+      .catch(function(){})
+      .finally(function(){
+        fetch('/auth/logout', {method:'POST', credentials:'include'}).finally(function () {
+          if (role === 'kitchen') { location.href='/kitchen-login'; }
+          else if (role === 'manager') { location.href='/manager-login'; }
+          else { location.href='/login.html'; }
+        });
       });
-    });
   };
-  fetch('/auth/me', {credentials:'include'}).then(function (response) { if (!response.ok) throw Error(); return response.json(); }).then(function (identity) { var displayName = identity.outletSlug || ''; fetch('/menu?restaurant=' + encodeURIComponent(identity.outletSlug || ''), {credentials:'include'}).then(function(r){return r.ok?r.json():null;}).then(function(d){ displayName = (d && d.restaurant_name) || displayName; render(identity.role, identity.outletSlug, displayName); }).catch(function(){ render(identity.role, identity.outletSlug, displayName); }); }).catch(function () { render('', slug); });
+
+  // Single /auth/me call — the slug is already in the JWT so no second
+  // /menu fetch is needed to populate the header.  We fire /menu in the
+  // background only to upgrade the display name from slug → human name.
+  fetch('/auth/me', {credentials:'include'})
+    .then(function (response) { if (!response.ok) throw Error(); return response.json(); })
+    .then(function (identity) {
+      var outletSlug = identity.outletSlug || identity.restaurantSlug || slug || '';
+      // Show the slug immediately — no waiting for a second fetch.
+      render(identity.role, outletSlug, outletSlug);
+      // Upgrade to the human display name in the background (non-blocking).
+      if (outletSlug) {
+        fetch('/menu?restaurant=' + encodeURIComponent(outletSlug), {credentials:'include'})
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(d){ if (d && d.restaurant_name) render(identity.role, outletSlug, d.restaurant_name); })
+          .catch(function(){});
+      }
+    })
+    .catch(function () { render('', slug, ''); });
 }());

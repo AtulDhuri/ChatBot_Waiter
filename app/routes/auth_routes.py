@@ -139,8 +139,14 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required.")
     payload = decode_token(token)
-    outlet = await repo.get_restaurant_by_id(db, payload.get("outletId"))
-    payload["outletSlug"] = (outlet or {}).get("slug")
+    # The slug is embedded in the JWT at issue time — no DB needed in the
+    # common case.  Only fall back to a DB lookup for old tokens that were
+    # issued before the restaurantSlug claim was added.
+    slug = payload.get("restaurantSlug") or payload.get("outletSlug")
+    if not slug:
+        outlet = await repo.get_restaurant_by_id(db, payload.get("outletId"))
+        slug = (outlet or {}).get("slug")
+    payload["outletSlug"] = slug
     return payload
 
 @router.get("/realtime-token")
@@ -160,7 +166,7 @@ async def realtime_token(principal: dict = Depends(require_staff)):
 @router.post("/kitchen-login")
 async def kitchen_login(body: KitchenLoginIn, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     row = (await db.execute(text("""SELECT id,tenant_id,outlet_id,role,password_hash,status,active
-        FROM users WHERE lower(username)=:username"""), {"username": body.username.strip().lower()})).mappings().first()
+        FROM users WHERE lower(username)=:identifier OR lower(email)=:identifier"""), {"identifier": body.username.strip().lower()})).mappings().first()
     if not row or row["role"] != "kitchen" or row.get("status", "ACTIVE") != "ACTIVE" or not row["active"] or not verify_password(body.password, row["password_hash"]):
         await audit(db, "FAILED_LOGIN", request=request, detail={"username": body.username.strip()})
         raise HTTPException(status_code=401, detail="Invalid kitchen username or password.")

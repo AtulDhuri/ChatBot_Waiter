@@ -71,6 +71,83 @@
     }
     .page-header p { margin: 0; color: var(--muted); font-size: 15px; }
 
+    /* ── Edit mode (already-configured restaurants) ── */
+    .edit-mode-card {
+      max-width: 900px;
+      margin: 0 auto 28px;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .edit-mode-header {
+      background: linear-gradient(135deg, #1a6b3a 0%, #2e9e5b 100%);
+      color: #fff;
+      padding: 22px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .edit-mode-header .em-icon { font-size: 28px; }
+    .edit-mode-header h2 { margin: 0 0 3px; font-size: 20px; font-weight: 800; }
+    .edit-mode-header p  { margin: 0; font-size: 13px; opacity: .85; }
+    .edit-mode-header .em-switch {
+      margin-left: auto;
+      background: rgba(255,255,255,.18);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .edit-mode-header .em-switch:hover { background: rgba(255,255,255,.28); }
+
+    /* collapsible edit sections */
+    .edit-section { border-top: 1px solid var(--border); }
+    .edit-section:first-of-type { border-top: none; }
+    .edit-section-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 18px 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      transition: background .15s;
+    }
+    .edit-section-toggle:hover { background: rgba(0,0,0,.03); }
+    .edit-section-toggle .es-icon { font-size: 20px; flex-shrink: 0; }
+    .edit-section-toggle .es-badge {
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+    }
+    .es-badge.ok  { background: #edf7f0; color: #1a6b3a; }
+    .es-badge.warn{ background: #fff7e6; color: #a05c00; }
+    .edit-section-toggle .es-chevron {
+      font-size: 12px;
+      color: var(--muted);
+      transition: transform .25s;
+      margin-left: 8px;
+    }
+    .edit-section-toggle.open .es-chevron { transform: rotate(180deg); }
+    .edit-section-body {
+      display: none;
+      padding: 0 28px 24px;
+    }
+    .edit-section-body.open { display: block; }
+
     /* ── Progress stepper ── */
     .stepper {
       max-width: 900px;
@@ -696,6 +773,9 @@
   <p>Configure your restaurant, tables, menu and payment settings in a few easy steps.</p>
 </div>
 
+<!-- ── Wizard view (hidden when restaurant is already configured) ── -->
+<div id="wizardView">
+
 <!-- ── Stepper ── -->
 <div class="stepper" id="stepper">
   <div class="step-item active" data-step="1">
@@ -975,6 +1055,194 @@
 
 </div><!-- /card -->
 
+</div><!-- /wizardView -->
+
+<!-- ════════════════════ EDIT MODE (already-configured) ════════════════════ -->
+<div id="editMode" style="display:none">
+
+  <div class="edit-mode-card">
+    <div class="edit-mode-header">
+      <span class="em-icon">✅</span>
+      <div>
+        <h2>Restaurant already set up</h2>
+        <p>Your restaurant is live. Expand any section below to edit and save changes independently.</p>
+      </div>
+      <button class="em-switch" onclick="switchToWizard()">⚙️ Full setup wizard</button>
+    </div>
+
+    <!-- ── Info ── -->
+    <div class="edit-section" id="em-section-info">
+      <button class="edit-section-toggle" onclick="toggleEditSection('info')">
+        <span class="es-icon">🏪</span>
+        Restaurant Info
+        <span class="es-badge ok" id="em-badge-info">Configured</span>
+        <span class="es-chevron">▼</span>
+      </button>
+      <div class="edit-section-body" id="em-body-info">
+        <div class="field">
+          <label for="em-name">Display name</label>
+          <input id="em-name" type="text" placeholder="e.g. Pizza Hub" />
+          <p class="muted">Shown to guests in the ordering interface.</p>
+        </div>
+        <div class="field">
+          <label>Restaurant slug</label>
+          <input type="text" id="em-slug-display" disabled style="background:var(--bg);cursor:not-allowed;opacity:.65" />
+          <p class="muted">Slug cannot be changed after setup. Contact support if you need to migrate.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+          <button class="btn btn-primary" onclick="saveEditInfo()">💾 Save name</button>
+          <span id="em-info-status" class="status" style="display:inline-block"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Tables ── -->
+    <div class="edit-section" id="em-section-tables">
+      <button class="edit-section-toggle" onclick="toggleEditSection('tables')">
+        <span class="es-icon">🪑</span>
+        Tables &amp; Zones
+        <span class="es-badge ok" id="em-badge-tables">Configured</span>
+        <span class="es-chevron">▼</span>
+      </button>
+      <div class="edit-section-body" id="em-body-tables">
+        <p class="muted" style="margin-bottom:16px">Edit zones and tables below. Click <strong>Save tables</strong> when done — this replaces the current table layout.</p>
+
+        <!-- Zone manager (reuses same zone/table state as wizard) -->
+        <div class="zone-manager">
+          <h3>Dining Zones</h3>
+          <div class="zone-pills" id="em-zonePills"></div>
+          <div class="add-zone-row">
+            <div class="field" style="margin:0;flex:1">
+              <input id="em-newZoneName" type="text" placeholder="New zone name (e.g. Rooftop)" />
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="emAddZone()">+ Add Zone</button>
+          </div>
+        </div>
+        <hr class="divider" />
+        <div class="table-controls">
+          <div class="ctrl-box">
+            <h4>➕ Add Single Table</h4>
+            <div class="field">
+              <label>Table name</label>
+              <input id="em-singleName" type="text" placeholder="e.g. T1" />
+            </div>
+            <div class="field">
+              <label>Zone</label>
+              <select id="em-singleZone"></select>
+            </div>
+            <div id="em-errSingle" class="inline-err"></div>
+            <button class="btn btn-primary btn-sm" onclick="emAddSingleTable()">Add Table</button>
+          </div>
+          <div class="ctrl-box">
+            <h4>📦 Bulk Add Tables</h4>
+            <div class="ctrl-row">
+              <div class="field"><label>Prefix</label><input id="em-bulkPrefix" type="text" placeholder="T" /></div>
+              <div class="field"><label>Count</label><input id="em-bulkCount" type="number" min="1" value="4" /></div>
+              <div class="field"><label>Start #</label><input id="em-bulkStart" type="number" min="1" value="1" /></div>
+            </div>
+            <div class="field"><label>Zone</label><select id="em-bulkZone"></select></div>
+            <div id="em-errBulk" class="inline-err"></div>
+            <button class="btn btn-secondary btn-sm" onclick="emBulkAddTables()">Bulk Add</button>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">
+          Table Grid
+          <span id="em-tableCount" style="color:var(--muted);font-weight:400;font-size:13px;margin-left:2px"></span>
+        </div>
+        <div class="table-grid" id="em-tableGrid">
+          <p style="color:var(--muted);font-size:13px;grid-column:1/-1">No tables added yet.</p>
+        </div>
+        <div class="zone-legend" id="em-zoneLegend"></div>
+        <div id="em-err-tables" class="inline-err" style="margin-top:8px"></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:16px">
+          <button class="btn btn-primary" onclick="saveEditTables()">💾 Save tables</button>
+          <span id="em-tables-status" class="status" style="display:inline-block"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Menu ── -->
+    <div class="edit-section" id="em-section-menu">
+      <button class="edit-section-toggle" onclick="toggleEditSection('menu')">
+        <span class="es-icon">🍽️</span>
+        Menu
+        <span class="es-badge ok" id="em-badge-menu">Configured</span>
+        <span class="es-chevron">▼</span>
+      </button>
+      <div class="edit-section-body" id="em-body-menu">
+        <p class="muted" style="margin-bottom:12px">Re-upload a CSV or Excel file to replace your current menu. Your existing <strong id="em-menuCurrentCount"></strong> will stay active until you upload a replacement.</p>
+        <div style="margin-bottom:16px;background:var(--bg);border-radius:12px;padding:16px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:6px">📥 CSV Template</div>
+          <p class="muted" style="margin:0 0 10px">Download a template matching your current zones, fill it in, then upload below.</p>
+          <button class="btn btn-outline btn-sm" onclick="downloadCsvTemplate()">⬇ Download CSV Template</button>
+        </div>
+        <div class="upload-area" id="em-uploadArea" onclick="document.getElementById('em-menuFile').click()">
+          <div class="upload-icon">📂</div>
+          <p><strong>Click to browse</strong> or drag &amp; drop</p>
+          <p>Accepts .csv and .xlsx files</p>
+          <input type="file" id="em-menuFile" accept=".csv,.xlsx" />
+        </div>
+        <div id="em-menuStatus" class="status" style="margin-top:10px"></div>
+        <div id="em-menuPreviewWrap" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">
+            <span id="em-menuPreviewLabel" style="font-weight:700;font-size:14px"></span>
+            <button class="btn btn-outline btn-sm" onclick="emClearMenu()">✕ Clear</button>
+          </div>
+          <div class="preview-wrap">
+            <table class="preview-table" id="em-menuPreviewTable"></table>
+          </div>
+        </div>
+        <div id="em-err-menu" class="inline-err" style="margin-top:8px"></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:16px">
+          <button class="btn btn-primary" onclick="saveEditMenu()">💾 Save menu</button>
+          <span id="em-menu-status" class="status" style="display:inline-block"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Payment ── -->
+    <div class="edit-section" id="em-section-payment">
+      <button class="edit-section-toggle" onclick="toggleEditSection('payment')">
+        <span class="es-icon">💳</span>
+        Payment Settings
+        <span class="es-badge ok" id="em-badge-payment">Configured</span>
+        <span class="es-chevron">▼</span>
+      </button>
+      <div class="edit-section-body" id="em-body-payment">
+        <div class="field">
+          <label for="em-upi">UPI ID</label>
+          <input id="em-upi" type="text" placeholder="e.g. yourname@okbank" />
+          <p class="muted">Guests pay to this UPI ID. Leave blank to remove.</p>
+        </div>
+        <div class="field">
+          <label for="em-upiName">Payee name shown to guests</label>
+          <input id="em-upiName" type="text" placeholder="e.g. Seaside Grill" />
+        </div>
+        <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+          <button class="btn btn-success" onclick="saveEditUpi()">💾 Save UPI</button>
+          <span id="em-upi-status" class="status" style="display:inline-block"></span>
+        </div>
+        <hr class="divider" />
+        <div class="field">
+          <label for="em-paymentMode">Ordering and payment mode</label>
+          <select id="em-paymentMode">
+            <option value="prepaid">Prepaid — pay before kitchen order</option>
+            <option value="postpaid">Postpaid — order first, pay final bill</option>
+          </select>
+          <p class="muted">In postpaid mode, orders go to the kitchen immediately and the table closes only after the final bill is paid.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn btn-purple" onclick="saveEditMode()">💾 Save payment mode</button>
+          <span id="em-mode-status" class="status" style="display:inline-block"></span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /edit-mode-card -->
+
+  <!-- Staff management is shown regardless -->
+</div><!-- /editMode -->
+
 <!-- ════════════════════ SUBMIT OVERLAY ════════════════════ -->
 <div class="submit-overlay" id="submitOverlay">
   <div class="submit-overlay-card">
@@ -1030,6 +1298,7 @@ var zones = [
 ];
 var tables = []; // [{table_number, zone}]
 var menuItems = []; // parsed rows
+var _menuTarget = null; // prefix for menu parse target elements (null = wizard 'menu*', 'em-menu' = edit mode)
 
 // ══════════════════════════════════════════════════
 //  STEPPER NAVIGATION
@@ -1341,11 +1610,12 @@ document.addEventListener('click', function(e) {
     e.preventDefault();
     area.classList.remove('drag-over');
     var file = e.dataTransfer.files[0];
-    if (file) handleMenuFile(file);
+    if (file) { _menuTarget = null; handleMenuFile(file); }
   });
 })();
 
 document.getElementById('menuFile').addEventListener('change', function() {
+  _menuTarget = null; // wizard mode
   if (this.files[0]) handleMenuFile(this.files[0]);
 });
 
@@ -1360,7 +1630,7 @@ function clearMenu() {
 function handleMenuFile(file) {
   var isXlsx = /\.xlsx$/i.test(file.name);
   var isCsv  = /\.csv$/i.test(file.name);
-  var statusEl = document.getElementById('menuStatus');
+  var statusEl = _menuTarget ? document.getElementById(_menuTarget + 'Status') : document.getElementById('menuStatus');
   statusEl.className = 'status';
   statusEl.textContent = 'Parsing file…';
 
@@ -1396,7 +1666,7 @@ function parseXlsx(file) {
       var csv = XLSX.utils.sheet_to_csv(ws);
       parseCsvText(csv);
     } catch(ex) {
-      var statusEl = document.getElementById('menuStatus');
+      var statusEl = _menuTarget ? document.getElementById(_menuTarget + 'Status') : document.getElementById('menuStatus');
       statusEl.className = 'status err';
       statusEl.textContent = 'Failed to parse Excel: ' + ex.message;
     }
@@ -1436,7 +1706,7 @@ function parseCSV(text) {
 }
 
 function parseCsvText(text) {
-  var statusEl = document.getElementById('menuStatus');
+  var statusEl = _menuTarget ? document.getElementById(_menuTarget + 'Status') : document.getElementById('menuStatus');
   try {
     var rawRows = parseCSV(text);
     if (rawRows.length < 2) {
@@ -1543,9 +1813,9 @@ function parseCsvText(text) {
 }
 
 function renderMenuPreview(headers, dataRows) {
-  var wrap = document.getElementById('menuPreviewWrap');
-  var label = document.getElementById('menuPreviewLabel');
-  var tbl = document.getElementById('menuPreviewTable');
+  var wrap  = _menuTarget ? document.getElementById(_menuTarget + 'PreviewWrap')  : document.getElementById('menuPreviewWrap');
+  var label = _menuTarget ? document.getElementById(_menuTarget + 'PreviewLabel') : document.getElementById('menuPreviewLabel');
+  var tbl   = _menuTarget ? document.getElementById(_menuTarget + 'PreviewTable') : document.getElementById('menuPreviewTable');
   wrap.style.display = 'block';
 
   var previewRows = dataRows.slice(0, 10);
@@ -1871,6 +2141,7 @@ function loadRestaurantData() {
     loading.style.display = 'none';
     slugInput.classList.remove('fetching');
     if (foundAny) banner.style.display = 'block';
+    checkSetupComplete();
   });
 }
 
@@ -2166,6 +2437,374 @@ function submitAll() {
     })
     .finally(function() { btnDone(submitBtn); });
 }
+
+// ══════════════════════════════════════════════════
+//  SETUP COMPLETE CHECK & EDIT MODE
+// ══════════════════════════════════════════════════
+
+/**
+ * Called once loadRestaurantData() settles.
+ * If tables AND menu items are already configured → show edit mode,
+ * hide the step wizard. Otherwise keep the wizard visible.
+ */
+function checkSetupComplete() {
+  var isComplete = tables.length > 0 && menuItems.length > 0;
+  setMode(isComplete ? 'edit' : 'wizard');
+}
+
+function setMode(mode) {
+  var wizardView = document.getElementById('wizardView');
+  var editMode   = document.getElementById('editMode');
+  var pageTitle  = document.querySelector('.page-header h1');
+  var pageSub    = document.querySelector('.page-header p');
+  if (mode === 'edit') {
+    wizardView.style.display = 'none';
+    editMode.style.display   = 'block';
+    if (pageTitle) pageTitle.textContent = '⚙️ Restaurant Settings';
+    if (pageSub)   pageSub.textContent   = 'Your restaurant is live. Edit any section below and save independently.';
+    syncEditMode();
+  } else {
+    wizardView.style.display = 'block';
+    editMode.style.display   = 'none';
+    if (pageTitle) pageTitle.textContent = '🍴 DineOS Restaurant Setup';
+    if (pageSub)   pageSub.textContent   = 'Configure your restaurant, tables, menu and payment settings in a few easy steps.';
+  }
+}
+
+/** Populate all edit-mode fields from the current shared state. */
+function syncEditMode() {
+  var slug = document.getElementById('restaurant').value.trim() || 'demo';
+  var name = document.getElementById('name').value.trim();
+  var upi  = document.getElementById('upi').value.trim();
+  var upiN = document.getElementById('upiName').value.trim();
+  var mode = document.getElementById('paymentMode').value;
+
+  document.getElementById('em-slug-display').value = slug;
+  if (name) document.getElementById('em-name').value = name;
+  if (upi)  document.getElementById('em-upi').value  = upi;
+  if (upiN) document.getElementById('em-upiName').value = upiN;
+  document.getElementById('em-paymentMode').value = mode;
+
+  // Menu count text
+  var countEl = document.getElementById('em-menuCurrentCount');
+  if (countEl) countEl.textContent = menuItems.length + ' menu item' + (menuItems.length !== 1 ? 's' : '');
+
+  // Badges
+  setEditBadge('tables',  tables.length > 0);
+  setEditBadge('menu',    menuItems.length > 0);
+  setEditBadge('payment', !!upi);
+
+  // Sync zone/table editors inside edit mode
+  emRenderZones();
+  emRenderTableGrid();
+}
+
+function setEditBadge(section, isOk) {
+  var el = document.getElementById('em-badge-' + section);
+  if (!el) return;
+  if (isOk) {
+    el.className = 'es-badge ok';
+    el.textContent = 'Configured';
+  } else {
+    el.className = 'es-badge warn';
+    el.textContent = 'Not set';
+  }
+}
+
+/** Toggle a collapsible edit section. */
+function toggleEditSection(name) {
+  var btn  = document.querySelector('#em-section-' + name + ' .edit-section-toggle');
+  var body = document.getElementById('em-body-' + name);
+  var isOpen = body.classList.contains('open');
+  // Close all
+  document.querySelectorAll('.edit-section-body').forEach(function(b) { b.classList.remove('open'); });
+  document.querySelectorAll('.edit-section-toggle').forEach(function(b) { b.classList.remove('open'); });
+  if (!isOpen) {
+    body.classList.add('open');
+    btn.classList.add('open');
+    // Refresh zone/table grids when tables section opens
+    if (name === 'tables') { emRenderZones(); emRenderTableGrid(); }
+  }
+}
+
+/** Switch back to the full wizard (admin choice). */
+function switchToWizard() {
+  setMode('wizard');
+}
+
+// ── Edit mode: Info save ──
+function saveEditInfo() {
+  var slug    = document.getElementById('restaurant').value.trim() || 'demo';
+  var newName = document.getElementById('em-name').value.trim();
+  var status  = document.getElementById('em-info-status');
+  if (!newName) { status.className = 'status err'; status.textContent = 'Display name is required.'; return; }
+  status.className = 'status'; status.textContent = 'Saving…';
+  // Update the shared name field and re-submit only the name via crawl/json
+  // (we send the full payload to avoid partial state; tables + menu are already loaded)
+  document.getElementById('name').value = newName;
+  var payload = buildPayload();
+  sfetch('/crawl/json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.detail || 'save failed'); return d; }); })
+  .then(function() { status.className = 'status ok'; status.textContent = '✓ Name saved.'; })
+  .catch(function(e) { status.className = 'status err'; status.textContent = 'Error: ' + e.message; });
+}
+
+// ── Edit mode: Tables save ──
+function saveEditTables() {
+  var status = document.getElementById('em-tables-status');
+  if (tables.length === 0) {
+    document.getElementById('em-err-tables').textContent = 'Add at least one table.';
+    document.getElementById('em-err-tables').classList.add('show');
+    return;
+  }
+  document.getElementById('em-err-tables').classList.remove('show');
+  status.className = 'status'; status.textContent = 'Saving…';
+  var payload = buildPayload();
+  sfetch('/crawl/json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.detail || 'save failed'); return d; }); })
+  .then(function() {
+    status.className = 'status ok';
+    status.textContent = '✓ Tables saved (' + tables.length + ').';
+    setEditBadge('tables', true);
+  })
+  .catch(function(e) { status.className = 'status err'; status.textContent = 'Error: ' + e.message; });
+}
+
+// ── Edit mode: Menu save ──
+function saveEditMenu() {
+  var status = document.getElementById('em-menu-status');
+  var errEl  = document.getElementById('em-err-menu');
+  if (menuItems.length === 0) {
+    errEl.textContent = 'Upload and parse a menu file before saving.';
+    errEl.classList.add('show');
+    return;
+  }
+  errEl.classList.remove('show');
+  status.className = 'status'; status.textContent = 'Saving…';
+  var payload = buildPayload();
+  sfetch('/crawl/json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.detail || 'save failed'); return d; }); })
+  .then(function(data) {
+    status.className = 'status ok';
+    status.textContent = '✓ Menu saved — ' + data.menu_items + ' items.';
+    document.getElementById('em-menuCurrentCount').textContent = menuItems.length + ' menu item' + (menuItems.length !== 1 ? 's' : '');
+    setEditBadge('menu', true);
+  })
+  .catch(function(e) { status.className = 'status err'; status.textContent = 'Error: ' + e.message; });
+}
+
+// ── Edit mode: UPI save ──
+function saveEditUpi() {
+  var restaurant = document.getElementById('restaurant').value.trim() || 'demo';
+  var upi     = document.getElementById('em-upi').value.trim();
+  var upiName = document.getElementById('em-upiName').value.trim();
+  var status  = document.getElementById('em-upi-status');
+  if (upi && !/^[^@\s]+@[^@\s]+$/.test(upi)) {
+    status.className = 'status err'; status.textContent = 'Enter a valid UPI ID (name@bank).'; return;
+  }
+  status.className = 'status'; status.textContent = 'Saving…';
+  sfetch('/pay/upi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ restaurant: restaurant, upi_vpa: upi, upi_name: upiName })
+  })
+  .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.detail || 'save failed'); return d; }); })
+  .then(function(d) {
+    // sync back to wizard fields
+    document.getElementById('upi').value     = upi;
+    document.getElementById('upiName').value = upiName;
+    status.className = 'status ok';
+    status.textContent = upi ? '✓ UPI saved: ' + d.upi_vpa : '✓ UPI cleared.';
+    setEditBadge('payment', !!upi);
+  })
+  .catch(function(e) { status.className = 'status err'; status.textContent = 'Error: ' + e.message; });
+}
+
+// ── Edit mode: Payment mode save ──
+function saveEditMode() {
+  var restaurant = document.getElementById('restaurant').value.trim() || 'demo';
+  var mode   = document.getElementById('em-paymentMode').value;
+  var status = document.getElementById('em-mode-status');
+  status.className = 'status'; status.textContent = 'Saving…';
+  sfetch('/pay/mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ restaurant: restaurant, payment_mode: mode })
+  })
+  .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.detail || 'save failed'); return d; }); })
+  .then(function() {
+    document.getElementById('paymentMode').value = mode;
+    status.className = 'status ok';
+    status.textContent = '✓ Mode saved: ' + mode + '.';
+  })
+  .catch(function(e) { status.className = 'status err'; status.textContent = 'Error: ' + e.message; });
+}
+
+// ══════════════════════════════════════════════════
+//  EDIT MODE — Zone / Table helpers
+//  These mirror the wizard helpers but target em-* elements.
+// ══════════════════════════════════════════════════
+
+function emRenderZones() {
+  var pills = document.getElementById('em-zonePills');
+  if (!pills) return;
+  pills.innerHTML = zones.map(function(z, i) {
+    return '<div class="zone-pill" style="background:' + z.color + '">' +
+      esc(z.name) +
+      '<button class="pill-del" onclick="emRemoveZone(' + i + ')" title="Remove zone">✕</button>' +
+    '</div>';
+  }).join('');
+  // Sync zone selects
+  ['em-singleZone','em-bulkZone'].forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    var val = sel.value;
+    sel.innerHTML = zones.map(function(z) {
+      return '<option value="' + esc(z.name) + '">' + esc(z.name) + '</option>';
+    }).join('');
+    if (zones.find(function(z) { return z.name === val; })) sel.value = val;
+  });
+  emRenderZoneLegend();
+}
+
+function emRenderZoneLegend() {
+  var leg = document.getElementById('em-zoneLegend');
+  if (!leg) return;
+  leg.innerHTML = zones.map(function(z) {
+    return '<div class="legend-item"><span class="legend-swatch" style="background:' + z.color + '"></span>' + esc(z.name) + '</div>';
+  }).join('');
+}
+
+function emRemoveZone(idx) {
+  var zoneName = zones[idx].name;
+  if (tables.some(function(t) { return t.zone === zoneName; })) {
+    alert('Cannot remove zone "' + zoneName + '" — it has tables assigned. Remove those tables first.');
+    return;
+  }
+  zones.splice(idx, 1);
+  emRenderZones();
+}
+
+function emAddZone() {
+  var inp = document.getElementById('em-newZoneName');
+  var name = (inp.value || '').trim();
+  if (!name) return;
+  if (zones.find(function(z) { return z.name.toLowerCase() === name.toLowerCase(); })) {
+    alert('Zone "' + name + '" already exists.'); return;
+  }
+  zones.push({ name: name, color: nextZoneColor() });
+  inp.value = '';
+  emRenderZones();
+}
+
+function emRenderTableGrid() {
+  var grid = document.getElementById('em-tableGrid');
+  if (!grid) return;
+  var countEl = document.getElementById('em-tableCount');
+  if (countEl) countEl.textContent = '(' + tables.length + ' tables)';
+
+  if (tables.length === 0) {
+    grid.innerHTML = '<p style="color:var(--muted);font-size:13px;grid-column:1/-1">No tables added yet.</p>';
+    return;
+  }
+  var zoneColorMap = {};
+  zones.forEach(function(z) { zoneColorMap[z.name] = z.color; });
+
+  grid.innerHTML = tables.map(function(t, i) {
+    var color = zoneColorMap[t.zone] || '#888';
+    return '<div class="table-tile" style="--tile-color:' + color + '" title="Click to edit">' +
+      '<span class="tile-num">' + esc(t.table_number) + '</span>' +
+      '<span class="tile-zone">' + esc(t.zone || '') + '</span>' +
+      '<button class="tile-del" onclick="emDeleteTable(' + i + ')">✕</button>' +
+    '</div>';
+  }).join('');
+}
+
+function emDeleteTable(idx) {
+  tables.splice(idx, 1);
+  emRenderTableGrid();
+  setEditBadge('tables', tables.length > 0);
+}
+
+function emAddSingleTable() {
+  var name = (document.getElementById('em-singleName').value || '').trim();
+  var zone = (document.getElementById('em-singleZone').value || '').trim();
+  var errEl = document.getElementById('em-errSingle');
+  if (!name) { errEl.textContent = 'Table name is required.'; errEl.classList.add('show'); return; }
+  if (tables.find(function(t) { return t.table_number === name; })) {
+    errEl.textContent = 'Table "' + name + '" already exists.'; errEl.classList.add('show'); return;
+  }
+  errEl.classList.remove('show');
+  tables.push({ table_number: name, zone: zone });
+  document.getElementById('em-singleName').value = '';
+  emRenderTableGrid();
+  // also refresh wizard grid
+  renderTableGrid();
+}
+
+function emBulkAddTables() {
+  var prefix = (document.getElementById('em-bulkPrefix').value || 'T').trim();
+  var count  = parseInt(document.getElementById('em-bulkCount').value)  || 4;
+  var start  = parseInt(document.getElementById('em-bulkStart').value)  || 1;
+  var zone   = (document.getElementById('em-bulkZone').value || '').trim();
+  var errEl  = document.getElementById('em-errBulk');
+  if (count < 1 || count > 200) { errEl.textContent = 'Count must be 1–200.'; errEl.classList.add('show'); return; }
+  errEl.classList.remove('show');
+  var added = 0;
+  for (var i = 0; i < count; i++) {
+    var num = String(start + i);
+    var tname = prefix + num;
+    if (!tables.find(function(t) { return t.table_number === tname; })) {
+      tables.push({ table_number: tname, zone: zone });
+      added++;
+    }
+  }
+  emRenderTableGrid();
+  renderTableGrid();
+}
+
+function emClearMenu() {
+  menuItems = [];
+  document.getElementById('em-menuPreviewWrap').style.display = 'none';
+  document.getElementById('em-menuStatus').textContent = '';
+  document.getElementById('em-menuCurrentCount').textContent = '0 menu items';
+}
+
+// ── Wire up the em-menuFile input ──
+(function() {
+  var fileInput = document.getElementById('em-menuFile');
+  if (!fileInput) return;
+  fileInput.addEventListener('change', function() {
+    if (!fileInput.files || !fileInput.files[0]) return;
+    _menuTarget = 'em-menu';
+    handleMenuFile(fileInput.files[0]);
+  });
+  var uploadArea = document.getElementById('em-uploadArea');
+  if (uploadArea) {
+    uploadArea.addEventListener('dragover', function(e) { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+    uploadArea.addEventListener('dragleave', function() { uploadArea.classList.remove('drag-over'); });
+    uploadArea.addEventListener('drop', function(e) {
+      e.preventDefault(); uploadArea.classList.remove('drag-over');
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) {
+        _menuTarget = 'em-menu';
+        handleMenuFile(file);
+      }
+    });
+  }
+})();
 
 // ══════════════════════════════════════════════════
 //  UTILITY

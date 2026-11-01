@@ -4,7 +4,7 @@ This returns a UPI URI (and amount) the frontend renders as a QR. It is a
 display payment: there is no gateway and no confirmation callback.
 """
 from typing import Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -24,11 +24,13 @@ router = APIRouter(prefix="/pay", tags=["pay"])
 
 
 @router.get("/upi", response_model=UpiInfo)
-async def get_upi(restaurant: str = "demo", db: AsyncSession = Depends(get_db)):
+async def get_upi(restaurant: str = "demo", db: AsyncSession = Depends(get_db), response: Response = None):
     """Return the UPI payee configured for a restaurant (admin convenience)."""
     rest = await repo.get_restaurant_by_slug(db, restaurant)
     vpa = (rest.get("upi_vpa") if rest else None) or settings.upi_vpa or None
     name = (rest.get("upi_name") if rest else None) or settings.upi_payee_name or None
+    if response:
+        response.headers["Cache-Control"] = "private, max-age=30"
     return UpiInfo(
         restaurant=restaurant,
         upi_vpa=vpa,
@@ -63,10 +65,12 @@ async def set_upi(
 
 @router.get("/mode", response_model=PaymentModeInfo)
 async def get_payment_mode(
-    restaurant: str = "demo", db: AsyncSession = Depends(get_db)
+    restaurant: str = "demo", db: AsyncSession = Depends(get_db), response: Response = None
 ):
     rest = await repo.get_restaurant_by_slug(db, restaurant)
     mode = (rest or {}).get("payment_mode") or "prepaid"
+    if response:
+        response.headers["Cache-Control"] = "private, max-age=30"
     return PaymentModeInfo(restaurant=restaurant, payment_mode=mode)
 
 

@@ -38,18 +38,6 @@ async def get_menu(
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the menu, scoped to a tenant.
-
-    Tenant resolution (first that applies):
-      1. ``session_id`` — the opaque-token guest path. The tenant (and pricing
-         zone) come from the session server-side, so the customer never needs
-         to know the slug. This is what the widget uses.
-      2. ``restaurant`` slug — legacy / staff / admin tooling.
-
-    When a ``session_id`` is supplied, each item's ``price`` is the price for
-    that session's zone, so the menu matches the guest's cart and bill exactly.
-    The per-zone map is still returned in ``zone_prices`` for transparency.
-    """
     rest = None
     session_row = None
 

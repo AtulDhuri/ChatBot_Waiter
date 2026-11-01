@@ -14,7 +14,7 @@ from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.db.database import dispose_db, init_db, AsyncSessionLocal
+from app.db.database import dispose_db, init_db
 from app.routes.deps import get_db
 from app.routes import (
     ask_routes,
@@ -65,56 +65,70 @@ app.add_middleware(
 
 @app.middleware("http")
 async def protect_admin_pages(request: Request, call_next):
-    protected = {"dashboard.html", "setup.html", "menu.html", "subscription.html", "billing.html", "admin.html", "manager.html", "kitchen.html", "sales.html", "reports.html", "dishes.html", "categories.html", "tables.html", "settings.html", "staff.html", "availability.html", "qr.html"}
-    clean_aliases = {"dashboard", "setup", "subscription", "billing", "admin", "manager", "kitchen", "sales", "reports", "dishes", "categories", "tables", "settings", "staff", "availability", "qr"}
-    page = request.url.path.rsplit("/", 1)[-1]
-    page_key = page if page.endswith(".html") else (page + ".html" if page in clean_aliases else None)
-    if page_key in protected:
-        from app.services.auth import decode_token, token_from_request
-        token = token_from_request(request)
-        try:
-            if not token:
-                raise ValueError("no token")
-            payload = decode_token(token)
-            async with AsyncSessionLocal() as auth_db:
-                try:
-                    current = (await auth_db.execute(text("""SELECT u.active,u.status,u.role,u.tenant_id,u.outlet_id,
-                        r.subscription_status, u.tenant_id AS outlet_tenant_id
-                        FROM users u JOIN restaurants r ON r.id=u.outlet_id
-                        WHERE u.id=:uid"""), {"uid": payload.get("userId")})).mappings().first()
-                except Exception as db_exc:
-                    import logging as _log
-                    _log.getLogger("waiter.guard").error("Page guard DB error: %s", db_exc)
-                    current = None
-            if not current:
-                raise ValueError("user not found")
-            if not current["active"] or current.get("status", "ACTIVE") != "ACTIVE":
-                raise ValueError("inactive account")
-            if current.get("subscription_status") in {"EXPIRED", "SUSPENDED"}:
-                raise ValueError("inactive subscription")
-            if int(current["tenant_id"]) != int(payload.get("tenantId", -1)) or int(current["outlet_id"]) != int(payload.get("outletId", -1)):
-                raise ValueError("tenant mismatch")
-            role = current["role"]
-            allowed = {
-                "admin.html": {"admin"},
-                "manager.html": {"admin", "manager"},
-                "reports.html": {"admin", "manager"},
-                "kitchen.html": {"admin", "manager", "kitchen"},
-                "availability.html": {"admin", "manager"},
-                "qr.html": {"admin", "manager"},
-                "dishes.html": {"admin", "manager"},
-                "categories.html": {"admin", "manager"},
-                "tables.html": {"admin", "manager"},
-                "settings.html": {"admin"},
-                "staff.html": {"admin"},
-                "sales.html": {"admin", "manager"},
-            }
-            if role not in allowed.get(page_key, {"admin"}):
-                return RedirectResponse(url="/kitchen.html" if role == "kitchen" else "/login.html", status_code=302)
-        except Exception as guard_exc:
-            import logging as _log
-            _log.getLogger("waiter.guard").warning("Page guard blocked %s: %s", page_key, guard_exc)
-            return RedirectResponse(url="/login.html", status_code=302)
+    # API routes are authenticated by the require_staff dependency — running a
+    # duplicate DB query here for every API call adds a full round-trip with no
+    # security benefit.  Only gate actual HTML page loads.
+    path = request.url.path
+    page = path.rsplit("/", 1)[-1]
+
+    # Fast-path: skip non-HTML requests immediately (no DB, no overhead).
+    clean_aliases = {
+        "dashboard", "setup", "subscription", "billing", "admin", "manager",
+        "kitchen", "sales", "reports", "dishes", "categories", "tables",
+        "settings", "staff", "availability", "qr",
+    }
+    is_html_page = page.endswith(".html") or page in clean_aliases
+    if not is_html_page:
+        return await call_next(request)
+
+    protected = {
+        "dashboard.html", "setup.html", "menu.html", "subscription.html",
+        "billing.html", "admin.html", "manager.html", "kitchen.html",
+        "sales.html", "reports.html", "dishes.html", "categories.html",
+        "tables.html", "settings.html", "staff.html", "availability.html",
+        "qr.html",
+    }
+    page_key = page if page.endswith(".html") else (page + ".html")
+    if page_key not in protected:
+        return await call_next(request)
+
+    # Protected HTML page: validate the JWT and check role.
+    # We do NOT open a DB connection here — the JWT already contains role,
+    # tenantId and outletId signed by the server.  A stolen/forged token is
+    # rejected by the HMAC check; a revoked account will be caught on the next
+    # API call by require_staff (which uses the 30-second in-process cache).
+    # This trades one DB round-trip per page load for a pure-CPU HMAC verify,
+    # which is negligible and keeps page navigation snappy.
+    from app.services.auth import decode_token, token_from_request
+    token = token_from_request(request)
+    try:
+        if not token:
+            raise ValueError("no token")
+        payload = decode_token(token)   # raises on bad HMAC or expiry
+        role = payload.get("role", "")
+        allowed = {
+            "admin.html":        {"admin"},
+            "manager.html":      {"admin", "manager"},
+            "reports.html":      {"admin", "manager"},
+            "kitchen.html":      {"admin", "manager", "kitchen"},
+            "availability.html": {"admin", "manager"},
+            "qr.html":           {"admin", "manager"},
+            "dishes.html":       {"admin", "manager"},
+            "categories.html":   {"admin", "manager"},
+            "tables.html":       {"admin", "manager"},
+            "settings.html":     {"admin"},
+            "staff.html":        {"admin"},
+            "sales.html":        {"admin", "manager"},
+        }
+        if role not in allowed.get(page_key, {"admin"}):
+            raise ValueError(f"role {role!r} not allowed for {page_key}")
+    except Exception as guard_exc:
+        import logging as _log
+        _log.getLogger("waiter.guard").warning(
+            "Page guard blocked %s: %s", page_key, guard_exc
+        )
+        return RedirectResponse(url="/login.html", status_code=302)
+
     return await call_next(request)
 
 app.include_router(session_routes.router)
