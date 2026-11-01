@@ -77,3 +77,28 @@ header button { cursor: pointer; background: #2e6cf0; border: none; }
 
 /* manager-only elements (hidden for kitchen role) */
 .manager-only { }
+
+/* ---- Elapsed-time badges ---- */
+.elapsed-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  /* Prominent: visible at a glance from a distance */
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.elapsed-green  { background: #16a34a; color: #fff; }
+.elapsed-yellow { background: #f59e0b; color: #1a1100; }
+.elapsed-red    { background: #dc2626; color: #fff; }
+
+/* card .top needs space for the badge on the right */
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}

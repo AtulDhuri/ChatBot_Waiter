@@ -87,6 +87,52 @@ button.mark-unpaid { background: #0f172a; color: #fcd34d; border: 1px solid #924
 .empty { padding: 40px; text-align: center; color: #64748b; }
 .err { color: #f87171; padding: 0 18px; }
 
+/* ---- Elapsed-time badges ---- */
+.elapsed-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.elapsed-green  { background: #16a34a; color: #fff; }
+.elapsed-yellow { background: #f59e0b; color: #1a1100; }
+.elapsed-red    { background: #dc2626; color: #fff; }
+
+/* Delayed KPI card highlight */
+.kpi.delayed-kpi .n { color: #f87171; }
+
+/* ---- Delayed Orders panel ---- */
+.delayed-panel {
+  margin: 0 18px 14px;
+  background: rgba(220,38,38,.08);
+  border: 1px solid rgba(220,38,38,.30);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+.delayed-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; font-weight: 700; color: #f87171; margin-bottom: 10px;
+}
+.delayed-count {
+  font-size: 12px; font-weight: 700;
+  background: #dc2626; color: #fff;
+  padding: 2px 10px; border-radius: 20px;
+}
+.delayed-list { display: flex; flex-direction: column; gap: 6px; }
+.delayed-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: rgba(220,38,38,.05);
+  border: 1px solid rgba(220,38,38,.15);
+  border-radius: 8px; padding: 6px 10px;
+}
+.delayed-dot { font-size: 12px; }
+.delayed-who { font-size: 13px; font-weight: 700; color: #fca5a5; flex: 1; min-width: 80px; }
+.delayed-zone { font-size: 11px; color: #93c5fd; }
+
 /* ---- Receipt settings dialog ---- */
 .modal-bg {
   display: none; position: fixed; inset: 0;

@@ -13,6 +13,51 @@
   var _refreshTimer = null;
   var _lastSig = null;
 
+  // Elapsed-time helpers (shared logic identical to kitchen.js)
+  var ACTIVE_STATUSES = { 'new': true, preparing: true, ready: true };
+
+  // ---- Notification integration ----
+  // Track what status each order had in the previous render so we can detect
+  // the preparing → ready transition without needing a WebSocket.
+  var _prevStatus   = {};   // { orderId: status }
+  var _firstRender  = true; // true until after the first successful load
+
+  function elapsedMinutes(isoTimestamp) {
+    var t = new Date(isoTimestamp);
+    if (isNaN(t.getTime())) return 0;
+    return Math.max(0, Math.floor((Date.now() - t.getTime()) / 60000));
+  }
+
+  function elapsedInfo(mins) {
+    if (mins >= 20) return { cls: 'red',    label: mins + 'm', urgency: 'Delayed'   };
+    if (mins >= 10) return { cls: 'yellow', label: mins + 'm', urgency: 'Attention' };
+    return             { cls: 'green',  label: mins + 'm', urgency: 'On Time'  };
+  }
+
+  function elapsedBadgeHtml(mins) {
+    var info = elapsedInfo(mins);
+    return "<span class='elapsed-badge elapsed-" + info.cls + "'>" + info.label + ' ' + info.urgency + '</span>';
+  }
+
+  // Tick elapsed badges in-place (avoids full re-render on the 60 s timer)
+  function tickElapsedBadges() {
+    var badges = cardsEl.querySelectorAll('[data-placed-at]');
+    Array.prototype.forEach.call(badges, function (el) {
+      var mins = elapsedMinutes(el.getAttribute('data-placed-at'));
+      var info = elapsedInfo(mins);
+      el.className = 'elapsed-badge elapsed-' + info.cls;
+      el.textContent = info.label + ' ' + info.urgency;
+    });
+    // Also refresh the delayed-orders panel
+    var delayedPanel = document.getElementById('delayedPanel');
+    if (delayedPanel && Object.keys(ORDERS).length) {
+      renderDelayedPanel(Object.values(ORDERS));
+    }
+  }
+
+  // Start the 60-second elapsed-badge ticker
+  setInterval(tickElapsedBadges, 60000);
+
   function restaurant() {
     return document.getElementById('restaurant').value.trim() || 'demo';
   }
@@ -75,10 +120,26 @@
     orders.forEach(function (o) {
       if (o.status !== 'cancelled') { revenue += Number(o.total || 0); count++; }
     });
+
+    // Active-only analytics
+    var activeOrders = orders.filter(function (o) { return ACTIVE_STATUSES[o.status]; });
+    var delayedOrders = activeOrders.filter(function (o) { return elapsedMinutes(o.created_at) >= 20; });
+
+    // Prep-time analytics (use all non-cancelled orders for the date range shown)
+    var nonCancelled = orders.filter(function (o) { return o.status !== 'cancelled'; });
+    var prepTimes = nonCancelled.map(function (o) { return elapsedMinutes(o.created_at); });
+    var avgPrep   = prepTimes.length ? Math.round(prepTimes.reduce(function (s, v) { return s + v; }, 0) / prepTimes.length) : 0;
+    var maxPrep   = prepTimes.length ? Math.max.apply(null, prepTimes) : 0;
+    var over20    = nonCancelled.length ? Math.round(delayedOrders.length / nonCancelled.length * 100) : 0;
+
     summaryEl.innerHTML =
       "<div class='kpi'><div class='n'>" + orders.length + "</div><div class='l'>Orders shown</div></div>" +
       "<div class='kpi'><div class='n'>" + count           + "</div><div class='l'>Billable</div></div>" +
-      "<div class='kpi'><div class='n'>" + money(cur, revenue) + "</div><div class='l'>Revenue</div></div>";
+      "<div class='kpi'><div class='n'>" + money(cur, revenue) + "</div><div class='l'>Revenue</div></div>" +
+      "<div class='kpi delayed-kpi'><div class='n'>" + delayedOrders.length + "</div><div class='l'>Delayed (&gt;20 min)</div></div>" +
+      "<div class='kpi'><div class='n'>" + avgPrep + " min</div><div class='l'>Avg prep time</div></div>" +
+      "<div class='kpi'><div class='n'>" + maxPrep + " min</div><div class='l'>Longest order today</div></div>" +
+      "<div class='kpi'><div class='n'>" + over20 + "%</div><div class='l'>Orders over 20 min</div></div>";
   }
 
   function signature(orders) {
@@ -87,14 +148,72 @@
     }).join('|');
   }
 
+  // ---- Delayed Orders panel ----
+  function renderDelayedPanel(orders) {
+    var panel = document.getElementById('delayedPanel');
+    if (!panel) return;
+    var activeOrders = orders.filter(function (o) { return ACTIVE_STATUSES[o.status]; });
+    var delayed = activeOrders
+      .map(function (o) { return { o: o, mins: elapsedMinutes(o.created_at) }; })
+      .filter(function (x) { return x.mins >= 20; })
+      .sort(function (a, b) { return b.mins - a.mins; });
+
+    if (!delayed.length) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = 'block';
+    var rows = delayed.map(function (x) {
+      var o   = x.o;
+      var who = o.order_type === 'takeaway'
+        ? '\uD83E\uDD61 ' + (o.customer_name ? esc(o.customer_name) : 'Takeaway')
+        : 'Table ' + esc(o.table_number);
+      return "<div class='delayed-row'>" +
+        "<span class='delayed-dot'>\uD83D\uDD34</span>" +
+        "<span class='delayed-who'>" + who + '</span>' +
+        "<span class='elapsed-badge elapsed-red'>" + x.mins + "m Delayed</span>" +
+        (o.zone ? "<span class='delayed-zone'>" + esc(o.zone) + '</span>' : '') +
+      '</div>';
+    }).join('');
+
+    panel.innerHTML =
+      "<div class='delayed-header'>" +
+        "<span>\u26A0\uFE0F Delayed Orders</span>" +
+        "<span class='delayed-count'>" + delayed.length + ' order' + (delayed.length === 1 ? '' : 's') + '</span>' +
+      '</div>' +
+      "<div class='delayed-list'>" + rows + '</div>';
+  }
+
   function render(orders) {
     errEl.textContent = '';
     cardsEl.innerHTML = '';
+
+    var notify = window.DineNotify;
+
+    // First render: seed all visible orders so we don't play stale sounds
+    if (_firstRender) {
+      if (notify) notify.seedKnown((orders || []).map(function (o) { return o.id; }));
+      _firstRender = false;
+    }
+
+    // Detect orders that newly became "ready" since the last render
+    if (notify) {
+      orders.forEach(function (o) {
+        if (o.status === 'ready' && _prevStatus[o.id] && _prevStatus[o.id] !== 'ready') {
+          notify.onOrderReady(o);
+        }
+      });
+    }
+
+    // Update previous-status snapshot
+    orders.forEach(function (o) { _prevStatus[o.id] = o.status; });
+
     ORDERS = {};
     orders = (orders || []).slice().sort(function (a, b) {
       return new Date(b.created_at) - new Date(a.created_at);
     });
     renderSummary(orders);
+    renderDelayedPanel(orders);
     if (!orders.length) { emptyEl.style.display = 'block'; return; }
     emptyEl.style.display = 'none';
 
@@ -108,6 +227,19 @@
       var when = new Date(o.created_at);
       var whenTxt = isNaN(when.getTime()) ? esc(o.created_at) : when.toLocaleString();
 
+      // Elapsed time badge — only for active (non-terminal) orders
+      var isActive = ACTIVE_STATUSES[o.status];
+      var elapsedBadge = '';
+      if (isActive) {
+        var mins = elapsedMinutes(o.created_at);
+        var info = elapsedInfo(mins);
+        elapsedBadge =
+          "<span class='elapsed-badge elapsed-" + info.cls + "' " +
+            "data-placed-at='" + esc(o.created_at) + "'>" +
+            info.label + ' ' + info.urgency +
+          '</span>';
+      }
+
       var card = document.createElement('div');
       card.className = 'bill';
       card.innerHTML =
@@ -119,6 +251,7 @@
           '</div>' +
           "<div class='badges'>" +
             "<span class='pill " + esc(o.status) + "'>" + esc(o.status) + '</span>' +
+            (elapsedBadge ? elapsedBadge : '') +
             "<span class='pay "  + (o.payment_status === 'verified' ? 'paid' : 'unpaid') + "'>" +
               (o.payment_status === 'verified' ? 'PAID' : 'UNPAID') +
             '</span>' +
@@ -334,6 +467,8 @@
       document.getElementById('restaurant').value = r;
       document.getElementById('availLink').href   = 'availability.html?r=' + encodeURIComponent(r);
     }
+    // Init notifications — manager plays "order ready" sounds
+    if (window.DineNotify) window.DineNotify.init('manager');
     setToday();
     load();
     _refreshTimer = setInterval(quietRefresh, REFRESH_MS);

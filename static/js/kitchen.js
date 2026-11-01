@@ -3,6 +3,7 @@
   'use strict';
 
   var POLL_MS       = 8000;
+  var TIMER_MS      = 60000; // elapsed-time badge refresh interval
   var grid          = document.getElementById('grid');
   var emptyEl       = document.getElementById('empty');
   var errEl         = document.getElementById('err');
@@ -12,6 +13,35 @@
   var realtimeClient = null;
   var NEXT       = { 'new': 'preparing', preparing: 'ready', ready: 'served' };
   var NEXT_LABEL = { 'new': 'Start cooking', preparing: 'Mark ready', ready: 'Mark served' };
+
+  // ---- Elapsed-time helpers ----
+  var TERMINAL_STATUSES = { served: true, cancelled: true };
+
+  function elapsedMinutes(isoTimestamp) {
+    var t = new Date(isoTimestamp);
+    if (isNaN(t.getTime())) return 0;
+    return Math.max(0, Math.floor((Date.now() - t.getTime()) / 60000));
+  }
+
+  // Returns { cls, label, urgency } where cls is the CSS modifier class.
+  function elapsedInfo(mins) {
+    if (mins >= 20) return { cls: 'red',    label: mins + 'm', urgency: 'Delayed'   };
+    if (mins >= 10) return { cls: 'yellow', label: mins + 'm', urgency: 'Attention' };
+    return             { cls: 'green',  label: mins + 'm', urgency: 'On Time'  };
+  }
+
+  // Rebuild only the elapsed-time badges without re-rendering the whole grid.
+  function tickElapsedBadges() {
+    var badges = grid.querySelectorAll('[data-placed-at]');
+    Array.prototype.forEach.call(badges, function (el) {
+      var status = el.getAttribute('data-order-status');
+      if (TERMINAL_STATUSES[status]) return; // stop counting for terminal orders
+      var mins = elapsedMinutes(el.getAttribute('data-placed-at'));
+      var info = elapsedInfo(mins);
+      el.className = 'elapsed-badge elapsed-' + info.cls;
+      el.textContent = info.label + ' ' + info.urgency;
+    });
+  }
 
   function restaurant() {
     var u = new URLSearchParams(location.search).get('r');
@@ -33,8 +63,27 @@
   function groupKey(o)   { return o.order_type === 'takeaway' ? '__takeaway__' : (o.table_number || '-'); }
   function groupLabel(o) { return o.order_type === 'takeaway' ? '\uD83E\uDD61 Takeaway' : 'Table ' + o.table_number; }
 
+  // ---- Notification integration ----
+  // On the very first poll we seed all visible orders as "known" so a page
+  // refresh does NOT replay sounds for orders that were already there.
+  // _firstRender resets to true on every page load (in-memory only).
+  var _firstRender = true;
+
   function render(orders) {
     errEl.textContent = '';
+
+    var notify = window.DineNotify;
+
+    if (_firstRender) {
+      // Silent seed: mark all currently-visible orders as known.
+      // No sounds fire for any of these on this render pass.
+      if (notify) notify.seedKnown((orders || []).map(function (o) { return o.id; }));
+      _firstRender = false;
+    } else {
+      // Not the first render — check for orders that have been waiting too long.
+      if (notify) notify.checkReminders(orders);
+    }
+
     grid.innerHTML    = '';
     if (!orders.length) { emptyEl.style.display = 'block'; return; }
     emptyEl.style.display = 'none';
@@ -54,7 +103,12 @@
       section.appendChild(head);
       var cards = document.createElement('div');
       cards.className = 'table-cards';
-      g.list.forEach(function (o) { cards.appendChild(buildCard(o)); });
+      g.list.forEach(function (o) {
+        var cardEl = buildCard(o);
+        cards.appendChild(cardEl);
+        // Fire new-order sound+flash — DineNotify deduplicates by order ID.
+        if (notify) notify.onNewOrder(o, cardEl);
+      });
       section.appendChild(cards);
       grid.appendChild(section);
     });
@@ -63,20 +117,35 @@
   function buildCard(o) {
     var card = document.createElement('div');
     card.className = 'card ' + o.status;
+    card.setAttribute('data-order-id', o.id);  // used by danger flash lookup
     var items = (o.items || []).map(function (it) {
       var note = it.instructions ? "<div class='note'>\uD83D\uDCDD " + esc(it.instructions) + '</div>' : '';
       return "<div><span class='q'>" + it.quantity + '\xD7</span> ' + esc(it.name) + note + '</div>';
     }).join('');
-    var t    = new Date(o.created_at);
-    var mins = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000));
+
+    var isTerminal = TERMINAL_STATUSES[o.status];
+    var mins       = elapsedMinutes(o.created_at);
+    var info       = elapsedInfo(mins);
+    // Elapsed badge (hidden once terminal)
+    var badgeHtml  = isTerminal
+      ? ''
+      : "<span class='elapsed-badge elapsed-" + info.cls + "' " +
+          "data-placed-at='" + esc(o.created_at) + "' " +
+          "data-order-status='" + esc(o.status) + "'>" +
+          info.label + ' ' + info.urgency +
+        '</span>';
+
     card.innerHTML =
-      "<div class='top'><span class='ono'>" + esc(o.order_no) + "</span>" +
-      "<span class='badge " + o.order_type + "'>" +
-        (o.order_type === 'takeaway' ? '\uD83E\uDD61 ' + (o.customer_name ? esc(o.customer_name) : 'Takeaway') : 'Table ' + esc(o.table_number)) +
-      '</span></div>' +
+      "<div class='top'>" +
+        "<span class='ono'>" + esc(o.order_no) + "</span>" +
+        "<span class='badge " + o.order_type + "'>" +
+          (o.order_type === 'takeaway' ? '\uD83E\uDD61 ' + (o.customer_name ? esc(o.customer_name) : 'Takeaway') : 'Table ' + esc(o.table_number)) +
+        '</span>' +
+        badgeHtml +
+      '</div>' +
       (o.zone ? "<div class='zone'>Zone: " + esc(o.zone) + '</div>' : '') +
       "<div class='items'>" + items + '</div>' +
-      "<div class='meta'>" + o.currency + Number(o.total).toFixed(2) + ' \xB7 ' + mins + ' min ago</div>';
+      "<div class='meta'>" + o.currency + Number(o.total).toFixed(2) + ' \xB7 placed ' + new Date(o.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + '</div>';
 
     var actions = document.createElement('div');
     actions.className = 'actions';
@@ -177,6 +246,8 @@
           Array.prototype.forEach.call(document.querySelectorAll('.manager-only'), function (el) { el.style.display = 'none'; });
           document.querySelector('h1').textContent = 'Kitchen Portal';
         }
+        // Init notifications — kitchen only plays "new order" sounds
+        if (window.DineNotify) window.DineNotify.init('kitchen');
         return setupRealtime(me).then(function () { return poll(); });
       })
       .catch(function () { location.href = '/kitchen-login'; });
@@ -187,5 +258,9 @@
     liveEl.textContent = liveEl.textContent === 'live' ? '\xB7live\xB7' : 'live';
     if (!realtimeActive) poll();
   }, POLL_MS);
+
+  // Elapsed-time badge refresh — runs every 60 s independently of polling
+  // so colours change precisely at the 10-min and 20-min boundaries.
+  setInterval(tickElapsedBadges, TIMER_MS);
 
 }());
