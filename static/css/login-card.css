@@ -1,0 +1,37 @@
+/*
+ * login-card.css — Shared styles for kitchen-login.html, manager-login.html,
+ *                  forgot-password.html, and reset-password.html.
+ * All four pages use the same centered card layout.
+ */
+
+:root { font-family: system-ui; color: #17212f; background: #eef2f6; }
+body { min-height: 100vh; display: grid; place-items: center; margin: 0; }
+.card {
+  background: #fff; width: min(390px, 90vw);
+  padding: 36px; border-radius: 18px;
+  box-shadow: 0 18px 50px #24344c1a;
+}
+.logo { font-weight: 800; font-size: 25px; color: #123b72; }
+.tag { color: #64748b; margin: 6px 0 28px; }
+label { display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px; }
+input {
+  width: 100%; padding: 13px; border: 1px solid #ccd5e1;
+  border-radius: 9px; box-sizing: border-box; font: inherit;
+}
+button {
+  width: 100%; margin-top: 22px; padding: 13px; border: 0;
+  border-radius: 9px; background: #1769e0; color: #fff;
+  font-weight: 700; font-size: 15px; cursor: pointer;
+}
+.error { color: #b42318; min-height: 20px; font-size: 13px; }
+
+/* forgot/reset variant uses a slightly wider card and .msg instead of .error */
+.card.wide { width: min(400px, 90vw); padding: 34px; border-radius: 16px; box-shadow: 0 14px 40px #1e35521a; }
+input.wide, button.wide { padding: 12px; margin: 9px 0; }
+.msg { min-height: 22px; font-size: 13px; }
+.msg.ok  { color: #087443; }
+.msg.error-msg { color: #b42318; }
+
+.links { font-size: 13px; margin-top: 20px; }
+.links a { color: #1769e0; }
+a { color: #1769e0; }

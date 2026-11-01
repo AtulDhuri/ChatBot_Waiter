@@ -19,6 +19,15 @@ from app.services import security
 logger = logging.getLogger("waiter.security")
 
 # ---------------------------------------------------------------------------
+# DB session helper — defined early so require_staff (below) can reference it
+# ---------------------------------------------------------------------------
+
+async def get_db() -> AsyncSession:
+    async for s in get_session():
+        yield s
+
+
+# ---------------------------------------------------------------------------
 # Short-lived in-process auth cache
 # ---------------------------------------------------------------------------
 # Each authenticated API call previously opened a *second* DB connection just
@@ -89,13 +98,16 @@ _AUTH_QUERY = text("""
 
 async def require_staff(
     request: Request,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Authenticate an admin/staff request.
 
     Uses the request's already-open DB session (injected by FastAPI's
-    dependency graph) so NO second connection is opened.  Validated user rows
-    are cached in-process for 30 s to absorb rapid successive calls.
+    dependency graph) so NO second connection is opened.  Both this dependency
+    and the route handler that calls it depend on the same ``get_db``
+    function, so FastAPI deduplicates them and shares one session per request.
+    Validated user rows are cached in-process for 30 s to absorb rapid
+    successive calls.
     """
     from app.services.auth import decode_token, token_from_request
 
@@ -292,8 +304,3 @@ def _mask(value: Optional[str]) -> str:
     if not value:
         return "-"
     return value[:6] + "…" if len(value) > 6 else value
-
-
-async def get_db() -> AsyncSession:
-    async for s in get_session():
-        yield s

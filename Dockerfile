@@ -23,8 +23,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY app ./app
+# ---- JS build (minify admin scripts + widget) ----
+# Install Node only for the build step; the final image keeps it small because
+# node_modules are dev-only and the output goes into static/js/dist/.
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json* ./
+COPY src ./src
 COPY static ./static
+COPY scripts ./scripts
+
+RUN npm ci --include=dev && npm run build && npm prune --production
 
 EXPOSE 8000
 

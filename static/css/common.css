@@ -1,0 +1,47 @@
+/*
+ * common.css — Shared dark-mode base and reset for all DineOS admin pages.
+ * Loaded by every authenticated page via <link rel="stylesheet" href="/common.css">.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  background: #020617;
+  color: #f8fafc;
+}
+
+/* ── Shared input/button dark base ── */
+input, select, textarea, button {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button.primary {
+  background: #6366f1;
+  color: #fff;
+  border: none;
+}
+
+button.primary:hover {
+  background: #4f46e5;
+}
+
+button.ghost {
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }

@@ -4,193 +4,51 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DineOS — Table QR Codes</title>
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        background: #faf7f5; color: #222; margin: 0; padding: 32px 16px;
-      }
-      .card {
-        max-width: 560px; margin: 0 auto 20px; background: #fff;
-        border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.08); padding: 26px;
-      }
-      h1 { margin-top: 0; }
-      label { display: block; font-weight: 600; margin: 14px 0 6px; }
-      input {
-        width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 10px;
-        font-size: 14px;
-      }
-      .row { display: flex; gap: 12px; }
-      .row > div { flex: 1; }
-      button {
-        margin-top: 18px; background: #e4572e; color: #fff; border: none;
-        padding: 12px 20px; border-radius: 10px; font-size: 15px; cursor: pointer;
-      }
-      .muted { color: #777; font-size: 13px; }
-      #out { text-align: center; }
-      #qrcode { display: inline-block; margin: 8px auto; padding: 12px;
-        background: #fff; border: 1px solid #eee; border-radius: 12px; }
-      .link {
-        word-break: break-all; font-size: 13px; background: #f1ece9;
-        padding: 10px; border-radius: 8px; margin-top: 10px;
-      }
-      .hint { font-size: 13px; color: #555; margin-top: 6px; }
-      a.btnlink { display:inline-block; margin-top:12px; color:#e4572e; }
-      @media print {
-        body { background: #fff; }
-        .card.controls, .hint, .muted, a.btnlink { display: none; }
-        .card { box-shadow: none; }
-      }
-      :root { color-scheme: dark; }
-      body { background:#020617; color:#f8fafc; }
-      .card { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10); box-shadow:0 10px 30px rgba(0,0,0,.28); }
-      input { background:#0f172a; color:#f8fafc; border-color:rgba(255,255,255,.10); }
-      button { background:#6366f1; }
-      button:hover { background:#4f46e5; }
-      .muted, .hint { color:#94a3b8; }
-      #qrcode { background:#fff; border-color:rgba(255,255,255,.10); }
-      .link { background:rgba(255,255,255,.10); color:#f8fafc; }
-      a.btnlink { color:#a855f7; }
-    </style>
+    <link rel="stylesheet" href="/css/common.css" />
+    <link rel="stylesheet" href="/css/qr.css" />
   </head>
-  <body><script src="/admin-header.js"></script>
-    <div class="card controls">
-      <h1>Generate table QR codes</h1>
-      <p class="muted">
-        Each table gets a QR code. A guest scans it and lands on the ordering
-        page already scoped to your restaurant and table — nothing to type.
-      </p>
+  <body>
+    <script src="/js/admin-header.js"></script>
 
+    <!-- ── Controls ── -->
+    <div class="card controls" id="controlsCard">
+      <h1>Generate table QR codes</h1>
+      <p class="muted">Each table gets a unique QR code. Guests scan and land directly on the ordering page scoped to their table.</p>
       <div class="row">
         <div>
           <label for="restaurant">Restaurant slug</label>
-          <input id="restaurant" type="text" value="demo"
-                 placeholder="e.g. seaside-grill" />
+          <input id="restaurant" type="text" value="demo" placeholder="e.g. seaside-grill" />
         </div>
         <div>
           <label for="table">Table number</label>
           <input id="table" type="text" value="1" placeholder="e.g. 12" />
         </div>
       </div>
-
-      <p class="hint">Sign in through DineOS before generating table codes. Authentication uses an HttpOnly cookie.</p>
-        to your own server.
-      </p>
-
       <label for="base">Base URL (where the widget is hosted)</label>
       <input id="base" type="text" placeholder="https://your-host" />
-      <p class="hint">
-        Leave blank to use this page's own origin. The QR encodes an opaque
-        table code — the restaurant slug is never put in the URL, so guests
-        can't see or guess your tenant.
-      </p>
-
-      <button id="go">Generate QR</button>
+      <p class="hint">Leave blank to use this page's own origin. The restaurant slug is never put in the QR URL.</p>
+      <div class="btn-row">
+        <button id="go">Generate QR</button>
+        <button id="printAll" class="btn-secondary">🖨️ Print all tables</button>
+      </div>
+      <div id="printAllStatus" class="status-msg" style="display:none"></div>
     </div>
 
+    <!-- ── Single QR result ── -->
     <div class="card" id="out" style="display:none">
       <h2 id="title"></h2>
       <div id="qrcode"></div>
       <div class="link" id="link"></div>
-      <a class="btnlink" href="#" onclick="window.print();return false;">
-        🖨️ Print this QR
-      </a>
-      <div class="hint">
-        Tip: open the link on your phone (or scan the QR) to test as a guest.
-      </div>
+      <a class="btnlink" href="#" onclick="window.print();return false;">🖨️ Print this QR</a>
+      <div class="hint">Tip: scan on your phone to test as a guest.</div>
     </div>
 
-    <!-- QR library, vendored locally (no external dependency). -->
+    <!-- ── All-tables print grid (hidden on screen, visible on print) ── -->
+    <div id="printGrid" style="display:none">
+      <div id="printGridInner"></div>
+    </div>
+
     <script src="/qrcode.min.js"></script>
-    <script>
-      function baseUrl() {
-        var base = document.getElementById("base").value.trim();
-        if (!base) base = window.location.origin;
-        return base.replace(/\/$/, "");
-      }
-
-      // Ask the server to mint (or return) the durable opaque token for this
-      // table. The slug + staff token are used only for this authenticated
-      // call; the token that comes back is what goes in the QR.
-      function mintToken(slug, table) {
-        return fetch("/qr/token", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ restaurant: slug, table_number: table }),
-        }).then(function (r) {
-          if (!r.ok) {
-            return r.json().then(
-              function (e) {
-                throw new Error((e && e.detail) || "Couldn't create the code.");
-              },
-              function () {
-                throw new Error("Couldn't create the code (HTTP " + r.status + ").");
-              }
-            );
-          }
-          return r.json(); // { token, table_number }
-        });
-      }
-
-      function renderQr(url, table) {
-        var out = document.getElementById("out");
-        var box = document.getElementById("qrcode");
-        var title = document.getElementById("title");
-        var link = document.getElementById("link");
-
-        out.style.display = "block";
-        box.innerHTML = "";
-        // Show only a table label — never the slug/tenant.
-        title.textContent = table ? "Table " + table : "Table QR";
-        link.textContent = url;
-
-        if (window.QRCode) {
-          new QRCode(box, {
-            text: url,
-            width: 220,
-            height: 220,
-            correctLevel: QRCode.CorrectLevel.M,
-          });
-        } else {
-          box.innerHTML =
-            "<p class='muted'>QR library unavailable. Use the link below:</p>" +
-            "<p><a href='" + url + "'>" + url + "</a></p>";
-        }
-      }
-
-      document.getElementById("go").addEventListener("click", function () {
-        var slug = document.getElementById("restaurant").value.trim() || "demo";
-        var table = document.getElementById("table").value.trim();
-        var go = document.getElementById("go");
-
-        if (!table) {
-          alert("Enter a table number.");
-          return;
-        }
-
-        go.disabled = true;
-        var old = go.textContent;
-        go.textContent = "Generating…";
-
-        mintToken(slug, table)
-          .then(function (data) {
-            var url =
-              baseUrl() + "/?r=" + encodeURIComponent(data.token);
-            renderQr(url, data.table_number || table);
-          })
-          .catch(function (err) {
-            alert(err.message);
-          })
-          .then(function () {
-            go.disabled = false;
-            go.textContent = old;
-          });
-      });
-
-      // No auto-generate on load: minting a token requires the staff token to
-      // be entered first.
-    </script>
+    <script src="/js/dist/qr.js"></script>
   </body>
 </html>

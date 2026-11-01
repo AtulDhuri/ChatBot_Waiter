@@ -1,0 +1,219 @@
+/*
+ * qr.css — Styles for qr.html (Table QR Code Generator)
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #020617;
+  color: #f8fafc;
+  margin: 0;
+  padding: 32px 16px;
+}
+
+.card {
+  max-width: 560px;
+  margin: 0 auto 20px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.28);
+  padding: 26px;
+}
+
+h1 { margin-top: 0; }
+
+label {
+  display: block;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 10px;
+  font-size: 14px;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.row { display: flex; gap: 12px; }
+.row > div { flex: 1; }
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+button {
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  cursor: pointer;
+}
+button:hover { background: #4f46e5; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: #334155;
+}
+.btn-secondary:hover { background: #475569; }
+
+.status-msg {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+.status-msg.ok  { color: #4ade80; }
+.status-msg.err { color: #f87171; }
+
+.muted { color: #94a3b8; font-size: 13px; }
+.hint  { font-size: 13px; color: #94a3b8; margin-top: 6px; }
+
+/* ── Single QR result ── */
+#out { text-align: center; }
+
+#qrcode {
+  display: inline-block;
+  margin: 8px auto;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+}
+
+.link {
+  word-break: break-all;
+  font-size: 13px;
+  background: rgba(255,255,255,.10);
+  color: #f8fafc;
+  padding: 10px;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+
+a.btnlink {
+  display: inline-block;
+  margin-top: 12px;
+  color: #a855f7;
+}
+
+/* ── Print grid (hidden on screen, only shown transiently before print) ── */
+#printGrid {
+  display: none; /* JS shows it briefly before window.print() */
+}
+
+#printGridInner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+}
+
+.qr-print-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1.5px solid #ccc;
+  border-radius: 12px;
+  padding: 14px 16px 10px;
+  width: 200px;
+  text-align: center;
+  background: #fff;
+  color: #111;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.qr-print-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.qr-print-table {
+  font-size: 18px;
+  font-weight: 800;
+  color: #111;
+  margin-bottom: 2px;
+}
+
+.qr-print-zone {
+  font-size: 11px;
+  color: #777;
+  margin-bottom: 8px;
+  min-height: 14px; /* preserve space even when empty */
+}
+
+.qr-print-code {
+  background: #fff;
+  padding: 4px;
+  margin-bottom: 8px;
+}
+
+.qr-print-url {
+  font-size: 11px;
+  color: #888;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PRINT STYLES
+   Everything is hidden except the QR grid.
+   @page removes browser-injected header/footer (URL, date, page number).
+───────────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Strip browser header/footer (URL, date, title) */
+  @page {
+    margin: 10mm;
+  }
+
+  /* Hide absolutely everything on the page … */
+  body > * {
+    display: none !important;
+  }
+
+  /* … then show only the print grid */
+  #printGrid {
+    display: block !important;
+  }
+
+  #printGridInner {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 12mm;
+    padding: 0;
+    justify-content: flex-start;
+  }
+
+  .qr-print-cell {
+    border: 1.5px solid #999;
+    border-radius: 8px;
+    padding: 10px 12px 8px;
+    width: 48mm;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .qr-print-name  { font-size: 7pt; }
+  .qr-print-table { font-size: 13pt; }
+  .qr-print-zone  { font-size: 7pt; }
+  .qr-print-url   { font-size: 7pt; }
+
+  /* The QR canvas inside each cell */
+  .qr-print-code canvas,
+  .qr-print-code img {
+    width: 38mm !important;
+    height: 38mm !important;
+  }
+}

@@ -1,10 +1,12 @@
 """/menu — return the structured menu (items grouped by category)."""
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import defaultdict
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repository as repo
@@ -37,6 +39,7 @@ async def get_menu(
     session_id: Optional[str] = None,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
+    response_obj: Response = None,
 ):
     rest = None
     session_row = None
@@ -102,9 +105,37 @@ async def get_menu(
     for item in items:
         categories[item.category or "General"].append(item)
 
-    return MenuResponse(
+    menu_response = MenuResponse(
         restaurant=rest["slug"],
         restaurant_name=rest.get("name") or rest["slug"],
         categories=dict(categories),
         items=items,
     )
+
+    # --- ETag + Cache-Control -------------------------------------------
+    # Build a lightweight fingerprint from item ids and availability flags.
+    # This lets browsers/CDNs send If-None-Match and get a 304 with no body
+    # when nothing has changed — essentially free on cache hits.
+    if response_obj is not None:
+        is_public = not session_id and not (request and token_from_request(request))
+
+        fingerprint_data = json.dumps(
+            [[r["id"], bool(r.get("available", True))] for r in rows],
+            separators=(",", ":"),
+        )
+        etag = '"' + hashlib.md5(fingerprint_data.encode()).hexdigest()[:16] + '"'
+        response_obj.headers["ETag"] = etag
+
+        if is_public:
+            response_obj.headers["Cache-Control"] = (
+                "public, max-age=60, stale-while-revalidate=300"
+            )
+        else:
+            response_obj.headers["Cache-Control"] = "private, max-age=30"
+
+        # Honour conditional requests — return 304 when the client already
+        # has the current version (no body, no DB cost for serialisation).
+        if request and request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag})
+
+    return menu_response

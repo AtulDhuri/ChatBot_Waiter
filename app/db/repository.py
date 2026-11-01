@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,56 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+
+# ---------------------------------------------------------------------------
+# In-process menu cache
+# ---------------------------------------------------------------------------
+# Menu data changes only on re-upload or availability toggle — both of which
+# call invalidate_menu_cache() to clear the entry immediately.  Between those
+# writes the same SELECT fires on every /menu and /manager/setup-data request
+# (one per customer page-load), paying a full Supabase round-trip each time.
+#
+# A simple dict cache keyed on restaurant_id (identical to the _AUTH_CACHE
+# in deps.py) eliminates that round-trip on warm hits.  TTL is 60 s as a
+# safety net in case an invalidation is missed; it matches the public
+# Cache-Control max-age already set on /menu responses.
+#
+# The cache is per-process and not shared across workers — consistent with the
+# auth cache posture.  A stale hit is at most 60 s old.
+
+_MENU_CACHE: dict[int, tuple[float, list]] = {}  # rid -> (expires_at, rows)
+_MENU_CACHE_TTL = 60          # seconds
+_MENU_CACHE_MAX = 500         # restaurants; prevents unbounded growth
+
+
+def _menu_cache_get(restaurant_id: int) -> Optional[list]:
+    entry = _MENU_CACHE.get(restaurant_id)
+    if entry and entry[0] > time.monotonic():
+        return entry[1]
+    _MENU_CACHE.pop(restaurant_id, None)
+    return None
+
+
+def _menu_cache_set(restaurant_id: int, rows: list) -> None:
+    if len(_MENU_CACHE) >= _MENU_CACHE_MAX:
+        cutoff = time.monotonic()
+        expired = [k for k, (exp, _) in _MENU_CACHE.items() if exp <= cutoff]
+        for k in expired[:max(1, _MENU_CACHE_MAX // 10)]:
+            _MENU_CACHE.pop(k, None)
+        if len(_MENU_CACHE) >= _MENU_CACHE_MAX:
+            for k in list(_MENU_CACHE)[: _MENU_CACHE_MAX // 10]:
+                _MENU_CACHE.pop(k, None)
+    _MENU_CACHE[restaurant_id] = (time.monotonic() + _MENU_CACHE_TTL, rows)
+
+
+def invalidate_menu_cache(restaurant_id: int) -> None:
+    """Drop the cached menu for *restaurant_id*.
+
+    Call this whenever menu_items rows change:
+      - clear_menu_items / insert_menu_items  (re-upload)
+      - set_menu_item_available               (availability toggle)
+    """
+    _MENU_CACHE.pop(restaurant_id, None)
 
 def _as_date(value: Optional[str]) -> Optional[date]:
     """Coerce a 'YYYY-MM-DD' string (or date/datetime) to a datetime.date.
@@ -247,6 +298,7 @@ async def clear_menu_items(session: AsyncSession, restaurant_id: int) -> None:
         text("DELETE FROM menu_items WHERE restaurant_id = :rid"),
         {"rid": restaurant_id},
     )
+    invalidate_menu_cache(restaurant_id)
 
 
 async def insert_menu_items(
@@ -277,12 +329,18 @@ async def insert_menu_items(
                 "available": False if available is False else True,
             },
         )
+    # Invalidate so the next read picks up the freshly inserted items.
+    invalidate_menu_cache(restaurant_id)
     return len(items)
 
 
 async def get_menu_items(
     session: AsyncSession, restaurant_id: int
 ) -> List[Dict[str, Any]]:
+    cached = _menu_cache_get(restaurant_id)
+    if cached is not None:
+        return cached
+
     rows = (
         await session.execute(
             text(
@@ -297,7 +355,9 @@ async def get_menu_items(
             {"rid": restaurant_id},
         )
     ).mappings().all()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    _menu_cache_set(restaurant_id, result)
+    return result
 
 
 async def set_menu_item_available(
@@ -316,6 +376,8 @@ async def set_menu_item_available(
             {"avail": available, "id": item_id, "rid": restaurant_id},
         )
     ).mappings().first()
+    # Invalidate so the next read reflects the availability change immediately.
+    invalidate_menu_cache(restaurant_id)
     return dict(row) if row else None
 
 

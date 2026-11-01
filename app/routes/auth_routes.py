@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
+import re
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -43,12 +44,52 @@ async def register(body: RegisterIn, request: Request, response: Response, db: A
     if existing:
         raise HTTPException(status_code=409, detail="Restaurant slug is already in use.")
     rid = await repo.get_or_create_restaurant(db, body.restaurant, body.name)
+
+    # Derive a username from the email local-part (before @).
+    # Make it unique by appending a suffix when the base is already taken.
+    base_username = body.email.lower().split("@")[0]
+    # Strip anything that isn't alphanumeric, dot, underscore, hyphen
+    base_username = re.sub(r"[^a-z0-9._-]", "", base_username) or "admin"
+
+    # Check for conflicts explicitly so every constraint violation has a
+    # precise, user-facing message instead of a blanket "email registered" lie.
+    existing_email = (await db.execute(
+        text("SELECT id FROM users WHERE lower(email) = :email"),
+        {"email": body.email.lower()}
+    )).first()
+    if existing_email:
+        raise HTTPException(status_code=409, detail="Email is already registered.")
+
+    # Find a free username: try base, then base2, base3, …
+    username = base_username
+    for suffix in range(2, 100):
+        taken = (await db.execute(
+            text("SELECT id FROM users WHERE lower(username) = :u"),
+            {"u": username.lower()}
+        )).first()
+        if not taken:
+            break
+        username = base_username + str(suffix)
+
     try:
-        row = (await db.execute(text("INSERT INTO users (email,password_hash,tenant_id,outlet_id,name,username,role,status) VALUES (:email,:hash,:tid,:oid,:name,'admin','admin','ACTIVE') RETURNING id"), {
-            "email": body.email.lower(), "hash": hash_password(body.password), "tid": rid, "oid": rid, "name": body.name
+        row = (await db.execute(text(
+            "INSERT INTO users (email,password_hash,tenant_id,outlet_id,name,username,role,status) "
+            "VALUES (:email,:hash,:tid,:oid,:name,:username,'admin','ACTIVE') RETURNING id"
+        ), {
+            "email":    body.email.lower(),
+            "hash":     hash_password(body.password),
+            "tid":      rid,
+            "oid":      rid,
+            "name":     body.name,
+            "username": username,
         })).first()
     except Exception as exc:
-        raise HTTPException(status_code=409, detail="Email is already registered.") from exc
+        err = str(exc).lower()
+        if "users_email" in err or ("unique" in err and "email" in err):
+            raise HTTPException(status_code=409, detail="Email is already registered.") from exc
+        if "unique" in err and "username" in err:
+            raise HTTPException(status_code=409, detail="Username conflict. Please try again.") from exc
+        raise HTTPException(status_code=500, detail="Registration failed. Please try again.") from exc
     token = issue_token(user_id=row[0], tenant_id=rid, outlet_id=rid, role="admin", subscription_status="TRIAL", restaurant_slug=body.restaurant)
     _cookie(response, token)
     await audit(db, "USER_CREATED", user_id=row[0], tenant_id=rid, request=request)

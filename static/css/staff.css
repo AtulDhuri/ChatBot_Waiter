@@ -1,0 +1,17 @@
+/*
+ * staff.css — Styles for staff.html (Staff Management)
+ */
+
+body { font: 15px system-ui; background: #f5f7fb; color: #182230; margin: 0; }
+.wrap { max-width: 960px; margin: 36px auto; padding: 0 18px; }
+.card { background: #fff; border: 1px solid #e1e6ef; border-radius: 14px; padding: 22px; margin: 18px 0; }
+form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+label { font-weight: 700; font-size: 13px; }
+input, select, button { width: 100%; box-sizing: border-box; padding: 11px; margin-top: 6px; border: 1px solid #ccd5e1; border-radius: 8px; font: inherit; }
+button { background: #1769e0; color: white; border: 0; font-weight: 700; cursor: pointer; }
+.full { grid-column: 1/-1; }
+.msg { color: #b42318; min-height: 20px; }
+.table { width: 100%; border-collapse: collapse; }
+.table td, .table th { text-align: left; padding: 11px 6px; border-bottom: 1px solid #edf0f4; }
+.small { width: auto; padding: 7px 9px; display: inline-block; }
+@media(max-width: 620px) { form { grid-template-columns: 1fr; } .table { font-size: 12px; } }

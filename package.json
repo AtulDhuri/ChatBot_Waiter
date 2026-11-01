@@ -4,11 +4,15 @@
   "private": true,
   "description": "Build tooling for the embeddable DineOS ordering widget. Source lives in src/widget/; the build bundles it into a single minified static/widget.js (IIFE, no deps) plus a sourcemap, so the embed stays plug-and-play.",
   "scripts": {
-    "build": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --minify --sourcemap --outfile=static/widget.js",
-    "build:dev": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --outfile=static/widget.js --banner:js=\"/* DineOS widget — dev bundle. Edit src/widget/*.js, then run `npm run build`. */\"",
+    "build": "npm run build:widget && npm run build:admin",
+    "build:widget": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --minify --sourcemap --outfile=static/widget.js",
+    "build:admin": "esbuild static/js/sfetch.js static/js/admin.js static/js/admin-header.js static/js/manager.js static/js/availability.js static/js/kitchen.js static/js/reports.js static/js/qr.js static/js/settings.js static/js/login.js static/js/staff.js static/js/kitchen-login.js static/js/manager-login.js static/js/forgot-password.js static/js/reset-password.js --bundle=false --minify --target=es2017 --outdir=static/js/dist",
+    "build:dev": "npm run build:widget:dev && npm run build:admin:dev",
+    "build:widget:dev": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --outfile=static/widget.js --banner:js=\"/* DineOS widget — dev bundle */\"",
+    "build:admin:dev": "esbuild static/js/sfetch.js static/js/admin.js static/js/admin-header.js static/js/manager.js static/js/availability.js static/js/kitchen.js static/js/reports.js static/js/qr.js static/js/settings.js static/js/login.js static/js/staff.js static/js/kitchen-login.js static/js/manager-login.js static/js/forgot-password.js static/js/reset-password.js --bundle=false --target=es2017 --outdir=static/js/dist",
     "watch": "esbuild src/widget/index.js --bundle --format=iife --target=es5 --outfile=static/widget.js --watch",
     "check:bundle": "node scripts/check-bundle.mjs",
-    "pretest": "npm run build",
+    "pretest": "npm run build:widget",
     "test": "node test/widget.runtime.test.mjs",
     "check": "npm run check:bundle && npm run test"
   },

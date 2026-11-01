@@ -4,96 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DineOS — Dish Availability</title>
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        margin: 0; background: #f5f6f8; color: #1d2430;
-      }
-      header {
-        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-        padding: 14px 18px; background: #11151a; color: #fff;
-        position: sticky; top: 0; z-index: 10;
-      }
-      header h1 { font-size: 18px; margin: 0; }
-      header .spacer { flex: 1; }
-      .controls {
-        display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-        padding: 14px 18px; background: #fff; border-bottom: 1px solid #e4e7ec;
-      }
-      input, select, button {
-        padding: 9px 11px; border-radius: 8px; border: 1px solid #d0d5dd;
-        font-size: 14px; background: #fff; color: #1d2430;
-      }
-      button { cursor: pointer; }
-      button.primary { background: #2e6cf0; color: #fff; border: none; }
-      button.ghost { background: #fff; }
-      #search { flex: 1; min-width: 180px; }
-      .bulk { display: flex; gap: 8px; }
-      .stat { font-size: 13px; color: #475467; padding: 10px 18px; }
-      .wrap { padding: 0 18px 40px; }
-      .cat { margin-top: 18px; }
-      .cat h2 {
-        font-size: 13px; color: #475467; text-transform: uppercase;
-        letter-spacing: .4px; margin: 0 0 8px; padding-bottom: 6px;
-        border-bottom: 1px solid #e4e7ec;
-      }
-      .dish {
-        display: flex; align-items: center; gap: 12px; background: #fff;
-        border: 1px solid #e4e7ec; border-radius: 10px; padding: 10px 14px;
-        margin-bottom: 8px;
-      }
-      .dish.off { opacity: .62; }
-      .dish .info { flex: 1; min-width: 0; }
-      .dish .name { font-weight: 600; font-size: 15px; }
-      .dish .desc {
-        font-size: 12px; color: #667085; overflow: hidden;
-        text-overflow: ellipsis; white-space: nowrap;
-      }
-      .dish .price { font-size: 12px; color: #98a2b3; }
-      .state {
-        font-size: 12px; font-weight: 700; min-width: 86px; text-align: right;
-      }
-      .state.on { color: #027a48; }
-      .state.off { color: #b42318; }
-      /* toggle switch */
-      .switch { position: relative; width: 52px; height: 30px; flex: none; }
-      .switch input { opacity: 0; width: 0; height: 0; }
-      .slider {
-        position: absolute; cursor: pointer; inset: 0; background: #d0d5dd;
-        border-radius: 30px; transition: .2s;
-      }
-      .slider::before {
-        content: ""; position: absolute; height: 24px; width: 24px;
-        left: 3px; top: 3px; background: #fff; border-radius: 50%;
-        transition: .2s;
-      }
-      .switch input:checked + .slider { background: #12b76a; }
-      .switch input:checked + .slider::before { transform: translateX(22px); }
-      .switch input:disabled + .slider { opacity: .5; cursor: default; }
-      .empty { padding: 40px; text-align: center; color: #98a2b3; }
-      .err { color: #b42318; padding: 0 18px; }
-      .toast {
-        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-        background: #1d2430; color: #fff; padding: 10px 16px; border-radius: 10px;
-        font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none;
-      }
-      .toast.show { opacity: 1; }
-      :root { color-scheme: dark; }
-      body { background:#020617; color:#f8fafc; }
-      header { background:#0f172a; border-bottom:1px solid rgba(255,255,255,.10); }
-      .controls { background:#0f172a; border-bottom-color:rgba(255,255,255,.10); }
-      input, select, button, button.ghost { background:#0f172a; color:#f8fafc; border-color:rgba(255,255,255,.10); }
-      button.primary { background:#6366f1; }
-      button.primary:hover { background:#4f46e5; }
-      .dish { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.10); }
-      .stat, .cat h2 { color:#94a3b8; }
-      .cat h2 { border-bottom-color:rgba(255,255,255,.10); }
-      .toast { background:#0f172a; color:#f8fafc; }
-    </style>
+    <link rel="stylesheet" href="/css/common.css" />
+    <link rel="stylesheet" href="/css/availability.css" />
   </head>
-  <body><script src="/admin-header.js"></script>
+  <body>
+    <script src="/js/admin-header.js"></script>
     <header>
       <h1>🍽️ Dish Availability</h1>
       <div class="spacer"></div>
@@ -113,196 +28,20 @@
       </select>
       <button id="reloadBtn" class="ghost">↻ Reload</button>
       <div class="bulk">
-        <button id="allOnBtn" class="ghost">Mark all available</button>
+        <button id="allOnBtn"  class="ghost">Mark all available</button>
         <button id="allOffBtn" class="ghost">Mark all sold out</button>
       </div>
     </div>
 
     <div id="stat" class="stat"></div>
-    <div id="err" class="err"></div>
-    <div class="wrap"><div id="list"></div>
+    <div id="err"  class="err"></div>
+    <div class="wrap">
+      <div id="list"></div>
       <div id="empty" class="empty" style="display:none">No dishes match.</div>
     </div>
     <div id="toast" class="toast"></div>
 
-    <script>
-      function getToken() { return ""; }
-      function promptToken(force) { if (force) location.href="/login.html"; }
-      function sfetch(url, opts) { opts=opts||{}; opts.credentials="include"; return fetch(url, opts).then(function(r){ if(r.status===401||r.status===402){location.href="/login.html";throw Error("Authentication required");} return r; }); }
-
-      var listEl = document.getElementById("list");
-      var emptyEl = document.getElementById("empty");
-      var errEl = document.getElementById("err");
-      var statEl = document.getElementById("stat");
-      var toastEl = document.getElementById("toast");
-      var MENU = []; // flat list of {id,name,description,category,price,currency,available}
-
-      function esc(s) {
-        return String(s == null ? "" : s).replace(/[&<>]/g, function (c) {
-          return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c];
-        });
-      }
-      function restaurant() { return document.getElementById("restaurant").value.trim() || "demo"; }
-
-      var _toastT = null;
-      function toast(msg) {
-        toastEl.textContent = msg;
-        toastEl.classList.add("show");
-        clearTimeout(_toastT);
-        _toastT = setTimeout(function () { toastEl.classList.remove("show"); }, 1800);
-      }
-
-      function stats() {
-        var on = MENU.filter(function (m) { return m.available; }).length;
-        statEl.textContent = MENU.length + " dishes · " + on + " available · " +
-          (MENU.length - on) + " sold out";
-      }
-
-      // Toggle one dish via the staff-guarded manager endpoint.
-      function setAvailable(item, available, inputEl) {
-        inputEl.disabled = true;
-        sfetch("/manager/menu/" + item.id + "?restaurant=" + encodeURIComponent(restaurant()), {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ available: available }),
-        })
-          .then(function (r) { if (!r.ok) throw new Error("Update failed (" + r.status + ")"); return r.json(); })
-          .then(function (res) {
-            item.available = !!res.available;
-            toast(esc(item.name) + (item.available ? " is now available" : " marked sold out"));
-            render();
-          })
-          .catch(function (e) {
-            errEl.textContent = e.message;
-            inputEl.checked = item.available; // revert visual
-            inputEl.disabled = false;
-          });
-      }
-
-      function render() {
-        errEl.textContent = "";
-        stats();
-        var q = document.getElementById("search").value.trim().toLowerCase();
-        var filter = document.getElementById("filter").value;
-        listEl.innerHTML = "";
-
-        var byCat = {};
-        var shown = 0;
-        MENU.forEach(function (m) {
-          if (filter === "available" && !m.available) return;
-          if (filter === "unavailable" && m.available) return;
-          if (q && (m.name || "").toLowerCase().indexOf(q) === -1 &&
-                   (m.description || "").toLowerCase().indexOf(q) === -1) return;
-          var cat = m.category || "General";
-          (byCat[cat] = byCat[cat] || []).push(m);
-          shown++;
-        });
-
-        if (!shown) { emptyEl.style.display = "block"; return; }
-        emptyEl.style.display = "none";
-
-        Object.keys(byCat).forEach(function (cat) {
-          var sec = document.createElement("div");
-          sec.className = "cat";
-          sec.innerHTML = "<h2>" + esc(cat) + "</h2>";
-          byCat[cat].forEach(function (m) {
-            var row = document.createElement("div");
-            row.className = "dish" + (m.available ? "" : " off");
-            var price = m.price != null ? (esc(m.currency || "") + Number(m.price).toFixed(0)) : "";
-            row.innerHTML =
-              "<div class='info'>" +
-                "<div class='name'>" + esc(m.name) + "</div>" +
-                (m.description ? "<div class='desc'>" + esc(m.description) + "</div>" : "") +
-                (price ? "<div class='price'>" + price + "</div>" : "") +
-              "</div>" +
-              "<span class='state " + (m.available ? "on" : "off") + "'>" +
-                (m.available ? "Available" : "Sold out") + "</span>";
-            var label = document.createElement("label");
-            label.className = "switch";
-            var input = document.createElement("input");
-            input.type = "checkbox";
-            input.checked = m.available;
-            input.setAttribute("aria-label", "Toggle availability for " + m.name);
-            input.onchange = function () { setAvailable(m, input.checked, input); };
-            var slider = document.createElement("span");
-            slider.className = "slider";
-            label.appendChild(input);
-            label.appendChild(slider);
-            row.appendChild(label);
-            sec.appendChild(row);
-          });
-          listEl.appendChild(sec);
-        });
-      }
-
-      function load() {
-        errEl.textContent = "";
-        // /menu is public but returns ids + availability, which is all we need.
-        fetch("/menu?restaurant=" + encodeURIComponent(restaurant()))
-          .then(function (r) {
-            if (r.status === 404) { MENU = []; render(); throw new Error("No menu loaded for this restaurant yet."); }
-            if (!r.ok) throw new Error("Load failed (" + r.status + ")");
-            return r.json();
-          })
-          .then(function (data) {
-            MENU = (data.items || []).map(function (i) {
-              return {
-                id: i.id, name: i.name, description: i.description,
-                category: i.category, price: i.price, currency: i.currency,
-                available: i.available !== false,
-              };
-            });
-            render();
-          })
-          .catch(function (e) { errEl.textContent = e.message; });
-      }
-
-      // Bulk apply: toggle only the dishes whose state differs from target.
-      function bulk(target) {
-        var changes = MENU.filter(function (m) { return m.available !== target; });
-        if (!changes.length) { toast("Nothing to change."); return; }
-        if (!confirm("Mark " + changes.length + " dish(es) as " +
-            (target ? "available" : "sold out") + "?")) return;
-        var done = 0, failed = 0;
-        changes.forEach(function (m) {
-          sfetch("/manager/menu/" + m.id + "?restaurant=" + encodeURIComponent(restaurant()), {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ available: target }),
-          })
-            .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
-            .then(function (res) { m.available = !!res.available; done++; })
-            .catch(function () { failed++; })
-            .then(function () {
-              if (done + failed === changes.length) {
-                render();
-                toast("Updated " + done + (failed ? (", " + failed + " failed") : "") + ".");
-              }
-            });
-        });
-      }
-
-      document.getElementById("search").addEventListener("input", render);
-      document.getElementById("filter").addEventListener("change", render);
-      document.getElementById("reloadBtn").onclick = load;
-      document.getElementById("tokenBtn").onclick = function () { promptToken(true); };
-      document.getElementById("allOnBtn").onclick = function () { bulk(true); };
-      document.getElementById("allOffBtn").onclick = function () { bulk(false); };
-      document.getElementById("restaurant").addEventListener("change", load);
-
-      (function () {
-        var r = new URLSearchParams(location.search).get("r");
-        if (r) {
-          document.getElementById("restaurant").value = r;
-          document.getElementById("mgrLink").href = "manager.html?r=" + encodeURIComponent(r);
-        }
-        if (!getToken()) promptToken(false);
-        load();
-      })();
-      document.getElementById("restaurant").addEventListener("change", function () {
-        document.getElementById("mgrLink").href =
-          "manager.html?r=" + encodeURIComponent(restaurant());
-      });
-    </script>
+    <script src="/js/dist/sfetch.js"></script>
+    <script src="/js/dist/availability.js"></script>
   </body>
 </html>
