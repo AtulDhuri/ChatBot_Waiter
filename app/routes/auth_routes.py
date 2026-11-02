@@ -204,6 +204,43 @@ async def realtime_token(principal: dict = Depends(require_staff)):
         "outletId": principal["outletId"],
     }
 
+
+@router.get("/session-realtime-token")
+async def session_realtime_token(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Return the minimal Supabase config needed by the customer widget to
+    subscribe to realtime order-status updates for their own session.
+
+    Security model:
+    - The session_id is the customer's signed session token (same value the
+      widget already holds). We verify the token signature and resolve the
+      session to get the restaurant_id, then return ONLY the anon key plus the
+      restaurant_id — never staff credentials or tenant-private data.
+    - The anon key has no special privileges; Supabase RLS on the `orders`
+      table governs what rows are visible.
+    - We return 404 when Supabase is not configured so the widget degrades
+      gracefully to polling.
+    """
+    if not settings.resolved_supabase_url or not settings.supabase_anon_key:
+        raise HTTPException(status_code=404, detail="Supabase Realtime is not configured.")
+
+    from app.services.sessions import verify as sess_verify
+    from app.db.repository import get_session_row
+
+    inner = sess_verify(session_id)
+    if not inner:
+        raise HTTPException(status_code=400, detail="Invalid session token.")
+
+    row = await get_session_row(db, inner)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    return {
+        "url":          settings.resolved_supabase_url,
+        "anonKey":      settings.supabase_anon_key,
+        "restaurantId": row["restaurant_id"],
+    }
+
+
 @router.post("/kitchen-login")
 async def kitchen_login(body: KitchenLoginIn, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     row = (await db.execute(text("""SELECT id,tenant_id,outlet_id,role,password_hash,status,active

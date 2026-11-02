@@ -1,7 +1,15 @@
 // Customer order-status tracking. The customer sees ONLY their own session's
 // orders (server-enforced via the session token). Statuses flow
-// Placed -> Preparing -> Served. Payment is shown separately by staff and
-// does not change the kitchen progress tracker.
+// Placed -> Preparing -> Served.
+//
+// Realtime strategy:
+//  - If the page loaded with @supabase/supabase-js present on the window AND
+//    the backend returns a realtime config from /session-realtime-token, we
+//    subscribe to postgres_changes on the `orders` table filtered to this
+//    session_id. Each push triggers pollStatusOnce() for a fresh server read.
+//  - If Supabase is not configured (404) or the channel fails, we fall back
+//    transparently to polling every STATUS_POLL_MS milliseconds.
+//  - Only ONE subscription and ONE fallback timer are ever live at a time.
 
 import { money } from "./config.js";
 import { state, ui } from "./state.js";
@@ -9,8 +17,14 @@ import { addMessage, el } from "./dom.js";
 import { getJson } from "./api.js";
 import { endLocalSession } from "./cart.js";
 
-var STATUS_POLL_MS = 6000;
-var STATUS_STEPS = ["Placed", "Preparing", "Served"];
+var STATUS_POLL_MS = 6000;   // fallback poll interval (ms) when realtime unavailable
+var STATUS_STEPS   = ["Placed", "Preparing", "Served"];
+
+// Realtime channel lifecycle state (module-level, not on `state` to avoid
+// leaking Supabase internals into session storage).
+var _rtClient  = null;  // Supabase client instance
+var _rtChannel = null;  // active channel
+var _rtActive  = false; // true when channel is SUBSCRIBED
 
 function statusClass(s) {
   return "wa-st-" + String(s || "").toLowerCase();
@@ -54,26 +68,18 @@ export function renderStatus(data, moveToBottom) {
     if ((o.items || []).length) row.appendChild(items);
 
     if (!isCancelled) {
-      var pct =
-        reached <= 0 ? 0 : (reached / (STATUS_STEPS.length - 1)) * 100;
+      var pct = reached <= 0 ? 0 : (reached / (STATUS_STEPS.length - 1)) * 100;
       var track = el("div", { class: "wa-track" }, [
         el("div", { class: "wa-track-line" }, [
-          el("div", {
-            class: "wa-track-fill",
-            style: "width:" + pct + "%",
-          }, []),
+          el("div", { class: "wa-track-fill", style: "width:" + pct + "%" }, []),
         ]),
-        el(
-          "div",
-          { class: "wa-track-nodes" },
+        el("div", { class: "wa-track-nodes" },
           STATUS_STEPS.map(function (label, i) {
             var cls = "wa-node";
             if (i < reached) cls += " done";
             else if (i === reached) cls += " active";
             return el("div", { class: cls }, [
-              el("span", { class: "wa-node-dot" }, [
-                i < reached ? "✓" : String(i + 1),
-              ]),
+              el("span", { class: "wa-node-dot" }, [i < reached ? "✓" : String(i + 1)]),
               el("span", { class: "wa-node-label" }, [label]),
             ]);
           })
@@ -81,19 +87,13 @@ export function renderStatus(data, moveToBottom) {
       ]);
       row.appendChild(track);
     } else {
-      row.appendChild(
-        el("div", { class: "wa-status-cancel-note" }, [
-          "This order was cancelled.",
-        ])
-      );
+      row.appendChild(el("div", { class: "wa-status-cancel-note" }, ["This order was cancelled."]));
     }
 
-    row.appendChild(
-      el("div", { class: "wa-status-total" }, [
-        el("span", { class: "wa-status-total-label" }, ["Total"]),
-        el("span", { class: "wa-status-total-amt" }, [money(o.total)]),
-      ])
-    );
+    row.appendChild(el("div", { class: "wa-status-total" }, [
+      el("span", { class: "wa-status-total-label" }, ["Total"]),
+      el("span", { class: "wa-status-total-amt" }, [money(o.total)]),
+    ]));
     card.appendChild(row);
   });
 
@@ -120,6 +120,7 @@ export function pollStatusOnce(moveToBottom) {
       renderStatus(data, !!moveToBottom);
       if (data && data.session_ended) {
         stopStatusPolling();
+        _teardownRealtime();
         endLocalSession();
         addMessage(
           state.paymentMode === "postpaid"
@@ -131,7 +132,7 @@ export function pollStatusOnce(moveToBottom) {
       }
     })
     .catch(function () {
-      // Transient error — keep polling; the next tick may succeed.
+      // Transient error — keep trying; the next tick may succeed.
     });
 }
 
@@ -141,21 +142,131 @@ export function showOrders() {
   });
 }
 
-export function startStatusPolling() {
-  if (state.statusTimer) return;
+// ── Realtime subscription ─────────────────────────────────────────────────
+// Tries to subscribe to postgres_changes on the orders table, filtered
+// to this session's restaurant. Each push triggers a server read so the
+// customer always sees authoritative data (not just the Supabase payload,
+// which omits the computed customer-safe fields the server adds).
+
+function _setupRealtime() {
+  if (_rtChannel || !state.token || typeof window === "undefined") return;
+  if (!window.supabase) return; // Supabase JS not loaded in this embed
+
+  fetch("/session-realtime-token?session_id=" + encodeURIComponent(state.token))
+    .then(function (r) {
+      if (!r.ok) throw new Error("not configured");
+      return r.json();
+    })
+    .then(function (cfg) {
+      if (!cfg.url || !cfg.anonKey || !cfg.restaurantId) return;
+
+      _rtClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
+        realtime: { heartbeatIntervalMs: 30000 },
+        // No staff JWT for customer channels — they use the anon key plus RLS.
+      });
+
+      // Channel name is scoped to this specific session — one customer,
+      // one channel, zero cross-session bleed.
+      var channelName = "customer-session-" + cfg.restaurantId + "-" + state.token.slice(0, 12);
+      _rtChannel = _rtClient.channel(channelName);
+
+      // Filter to this session's orders only. `session_id` is a column on
+      // the orders table that was set when the order was placed.
+      // This means the channel only fires when THIS customer's orders change,
+      // not every other table in the restaurant.
+      _rtChannel.on(
+        "postgres_changes",
+        {
+          event:  "UPDATE",  // only status/payment changes matter for the tracker
+          schema: "public",
+          table:  "orders",
+          filter: "session_id=eq." + state.token,
+        },
+        function () {
+          // Re-fetch from server — the server maps raw DB status to the
+          // customer-safe labels (Placed / Preparing / Served).
+          pollStatusOnce();
+        }
+      );
+
+      // Also catch INSERT in case the first order of a session arrives
+      // after the channel is already open.
+      _rtChannel.on(
+        "postgres_changes",
+        {
+          event:  "INSERT",
+          schema: "public",
+          table:  "orders",
+          filter: "session_id=eq." + state.token,
+        },
+        function () { pollStatusOnce(); }
+      );
+
+      _rtChannel.subscribe(function (status) {
+        if (status === "SUBSCRIBED") {
+          _rtActive = true;
+          // Stop fallback polling — realtime has taken over.
+          _stopFallbackPolling();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          _rtActive = false;
+          _rtChannel = null;
+          // Start fallback polling if not already running.
+          _ensureFallbackPolling();
+        }
+      });
+    })
+    .catch(function () {
+      // Supabase not configured — keep using polling.
+    });
+}
+
+function _teardownRealtime() {
+  if (_rtChannel) {
+    try { _rtChannel.unsubscribe(); } catch (e) {}
+    _rtChannel = null;
+  }
+  _rtClient  = null;
+  _rtActive  = false;
+}
+
+// ── Fallback polling timer ────────────────────────────────────────────────
+
+function _ensureFallbackPolling() {
+  if (state.statusTimer) return;  // already running
+  if (!state.token)      return;
   pollStatusOnce();
   state.statusTimer = setInterval(pollStatusOnce, STATUS_POLL_MS);
 }
 
-export function stopStatusPolling() {
+function _stopFallbackPolling() {
   if (state.statusTimer) {
     clearInterval(state.statusTimer);
     state.statusTimer = null;
   }
 }
 
+// ── Public API ────────────────────────────────────────────────────────────
+
+export function startStatusPolling() {
+  if (!state.token) return;
+  // Attempt realtime first; fallback polling starts only if it fails.
+  _setupRealtime();
+  // If realtime is already active (reconnect scenario), don't add a timer.
+  if (!_rtActive) _ensureFallbackPolling();
+}
+
+export function stopStatusPolling() {
+  _stopFallbackPolling();
+  _teardownRealtime();
+}
+
 export function resumeStatusPollingIfNeeded() {
   if (!state.token) return;
+  // If realtime is alive, a one-shot refresh is enough to fill any gap.
+  if (_rtActive) {
+    pollStatusOnce();
+    return;
+  }
   if (state.statusTimer) return;
   startStatusPolling();
 }

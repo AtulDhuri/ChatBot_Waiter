@@ -2,19 +2,22 @@
 (function () {
   'use strict';
 
-  var POLL_MS       = 8000;
-  var TIMER_MS      = 60000; // elapsed-time badge refresh interval
+  // ── Constants ─────────────────────────────────────────────────────────────
+  // POLL_MS is only used for:
+  //   (a) the live-indicator blink (purely cosmetic), and
+  //   (b) the one-time recovery poll when Supabase is not configured.
+  // It no longer drives a data-refresh loop.
+  var TIMER_MS      = 60000; // elapsed-time badge refresh interval (cosmetic)
   var grid          = document.getElementById('grid');
   var emptyEl       = document.getElementById('empty');
   var errEl         = document.getElementById('err');
   var liveEl        = document.getElementById('live');
   var currentRole   = '';
   var realtimeActive = false;
-  var realtimeClient = null;
   var NEXT       = { 'new': 'preparing', preparing: 'ready', ready: 'served' };
   var NEXT_LABEL = { 'new': 'Start cooking', preparing: 'Mark ready', ready: 'Mark served' };
 
-  // ---- Elapsed-time helpers ----
+  // ── Elapsed-time helpers ──────────────────────────────────────────────────
   var TERMINAL_STATUSES = { served: true, cancelled: true };
 
   function elapsedMinutes(isoTimestamp) {
@@ -23,19 +26,18 @@
     return Math.max(0, Math.floor((Date.now() - t.getTime()) / 60000));
   }
 
-  // Returns { cls, label, urgency } where cls is the CSS modifier class.
   function elapsedInfo(mins) {
     if (mins >= 20) return { cls: 'red',    label: mins + 'm', urgency: 'Delayed'   };
     if (mins >= 10) return { cls: 'yellow', label: mins + 'm', urgency: 'Attention' };
     return             { cls: 'green',  label: mins + 'm', urgency: 'On Time'  };
   }
 
-  // Rebuild only the elapsed-time badges without re-rendering the whole grid.
+  // Rebuild only the elapsed-time badges — no network call.
   function tickElapsedBadges() {
     var badges = grid.querySelectorAll('[data-placed-at]');
     Array.prototype.forEach.call(badges, function (el) {
       var status = el.getAttribute('data-order-status');
-      if (TERMINAL_STATUSES[status]) return; // stop counting for terminal orders
+      if (TERMINAL_STATUSES[status]) return;
       var mins = elapsedMinutes(el.getAttribute('data-placed-at'));
       var info = elapsedInfo(mins);
       el.className = 'elapsed-badge elapsed-' + info.cls;
@@ -63,10 +65,9 @@
   function groupKey(o)   { return o.order_type === 'takeaway' ? '__takeaway__' : (o.table_number || '-'); }
   function groupLabel(o) { return o.order_type === 'takeaway' ? '\uD83E\uDD61 Takeaway' : 'Table ' + o.table_number; }
 
-  // ---- Notification integration ----
+  // ── Notification integration ──────────────────────────────────────────────
   // On the very first poll we seed all visible orders as "known" so a page
   // refresh does NOT replay sounds for orders that were already there.
-  // _firstRender resets to true on every page load (in-memory only).
   var _firstRender = true;
 
   function render(orders) {
@@ -75,16 +76,13 @@
     var notify = window.DineNotify;
 
     if (_firstRender) {
-      // Silent seed: mark all currently-visible orders as known.
-      // No sounds fire for any of these on this render pass.
       if (notify) notify.seedKnown((orders || []).map(function (o) { return o.id; }));
       _firstRender = false;
     } else {
-      // Not the first render — check for orders that have been waiting too long.
       if (notify) notify.checkReminders(orders);
     }
 
-    grid.innerHTML    = '';
+    grid.innerHTML = '';
     if (!orders.length) { emptyEl.style.display = 'block'; return; }
     emptyEl.style.display = 'none';
     var groups = {}, order = [];
@@ -106,7 +104,6 @@
       g.list.forEach(function (o) {
         var cardEl = buildCard(o);
         cards.appendChild(cardEl);
-        // Fire new-order sound+flash — DineNotify deduplicates by order ID.
         if (notify) notify.onNewOrder(o, cardEl);
       });
       section.appendChild(cards);
@@ -117,7 +114,7 @@
   function buildCard(o) {
     var card = document.createElement('div');
     card.className = 'card ' + o.status;
-    card.setAttribute('data-order-id', o.id);  // used by danger flash lookup
+    card.setAttribute('data-order-id', o.id);
     var items = (o.items || []).map(function (it) {
       var note = it.instructions ? "<div class='note'>\uD83D\uDCDD " + esc(it.instructions) + '</div>' : '';
       return "<div><span class='q'>" + it.quantity + '\xD7</span> ' + esc(it.name) + note + '</div>';
@@ -126,7 +123,6 @@
     var isTerminal = TERMINAL_STATUSES[o.status];
     var mins       = elapsedMinutes(o.created_at);
     var info       = elapsedInfo(mins);
-    // Elapsed badge (hidden once terminal)
     var badgeHtml  = isTerminal
       ? ''
       : "<span class='elapsed-badge elapsed-" + info.cls + "' " +
@@ -145,16 +141,35 @@
       '</div>' +
       (o.zone ? "<div class='zone'>Zone: " + esc(o.zone) + '</div>' : '') +
       "<div class='items'>" + items + '</div>' +
-      "<div class='meta'>" + o.currency + Number(o.total).toFixed(2) + ' \xB7 placed ' + new Date(o.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + '</div>';
+      "<div class='meta'>" + o.currency + Number(o.total).toFixed(2) + ' \xB7 placed ' + new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
 
     var actions = document.createElement('div');
     actions.className = 'actions';
 
     function lock(btn, promise) {
+      // Disable all buttons immediately for visual feedback.
       Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = true; });
       promise.then(function (updated) {
-        if (updated && updated.status) card.className = 'card ' + updated.status;
-        poll();
+        // The PATCH returns the updated order. Rebuild just this card in-place
+        // from the server response — no poll(), no full re-render.
+        // Realtime fires on other devices from the same DB write.
+        if (updated && updated.id) {
+          var newCard = buildCard(updated);
+          if (card.parentNode) card.parentNode.replaceChild(newCard, card);
+          // If the order is now terminal (served/cancelled), check whether
+          // the whole table-group is empty and remove it.
+          if (TERMINAL_STATUSES[updated.status]) {
+            var group = newCard.closest ? newCard.closest('.table-group') : null;
+            if (group) {
+              var remaining = group.querySelectorAll('.card:not(.served):not(.cancelled)');
+              if (!remaining.length) group.parentNode && group.parentNode.removeChild(group);
+            }
+            if (!grid.querySelector('.card')) emptyEl.style.display = 'block';
+          }
+        } else {
+          // Fallback: couldn't parse response — re-enable buttons.
+          Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = false; });
+        }
       }, function (e) {
         Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = false; });
         showErr(e);
@@ -168,7 +183,10 @@
       adv.onclick     = function () { lock(adv, patch(o.id, { status: NEXT[o.status] })); };
       actions.appendChild(adv);
     }
-    if (o.status !== 'cancelled' && currentRole !== 'kitchen') {
+    // Cancel is available to ALL roles (kitchen + manager/admin).
+    // Backend allows kitchen to cancel but blocks payment changes.
+    // Cancelled orders disappear from kitchen view and show as cancelled in manager.
+    if (o.status !== 'cancelled' && o.status !== 'served') {
       var cancel = document.createElement('button');
       cancel.className   = 'b-cancel';
       cancel.textContent = 'Cancel';
@@ -184,6 +202,13 @@
 
   function showErr(e) { errEl.textContent = 'Error: ' + e.message; }
 
+  // ── Data fetch ────────────────────────────────────────────────────────────
+  // poll() is called in two cases only:
+  //   1. Once on page load (initial render).
+  //   2. When the realtime channel pushes a change from ANOTHER device
+  //      (e.g. a second kitchen screen, manager marking paid, new order).
+  // It is NOT called after your own button clicks — those update the card
+  // in-place from the PATCH response via lock() above.
   var pollInFlight = false;
   function poll() {
     if (pollInFlight || document.hidden) return Promise.resolve();
@@ -195,6 +220,60 @@
       .then(function () { pollInFlight = false; });
   }
 
+  // ── Live-indicator blink ──────────────────────────────────────────────────
+  // Purely cosmetic — runs regardless of realtime/polling mode.
+  setInterval(function () {
+    liveEl.textContent = liveEl.textContent === 'live' ? '\xB7live\xB7' : 'live';
+  }, 3000);
+
+  // Elapsed-time badge refresh — cosmetic, no network.
+  setInterval(tickElapsedBadges, TIMER_MS);
+
+  // ── Realtime setup (via RealtimeManager) ─────────────────────────────────
+  function setupRealtime(identity) {
+    if (!window.supabase || !window.RealtimeManager) return Promise.resolve(false);
+    if (!identity || !identity.outletId)               return Promise.resolve(false);
+
+    return window.RealtimeManager.init({ outletId: identity.outletId })
+      .then(function (ok) {
+        if (!ok) return false;
+
+        // A change arrived from another device/session → full refresh.
+        // This is the ONLY time poll() runs after initial load.
+        window.RealtimeManager.on('orders', function () { poll(); });
+
+        realtimeActive = true;
+        return true;
+      })
+      .catch(function () {
+        realtimeActive = false;
+        return false;
+      });
+  }
+
+  // ── Degraded polling (when realtime unavailable) ──────────────────────────
+  // Only active when Supabase is not configured or unreachable.
+  var _fallbackTimer = null;
+  function startFallbackPolling() {
+    if (_fallbackTimer || realtimeActive) return;
+    _fallbackTimer = setInterval(function () {
+      if (!realtimeActive) poll();
+    }, 8000);
+  }
+
+  function stopFallbackPolling() {
+    if (_fallbackTimer) { clearInterval(_fallbackTimer); _fallbackTimer = null; }
+  }
+
+  // ── Page focus recovery ───────────────────────────────────────────────────
+  // When the tab regains visibility, pull a fresh snapshot.
+  // With realtime active the channel resumes automatically; this one-shot
+  // poll just fills the gap that may have occurred while hidden.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) poll();
+  });
+
+  // ── Buttons ───────────────────────────────────────────────────────────────
   document.getElementById('closeBtn').addEventListener('click', function () {
     var tn = document.getElementById('closeTable').value.trim();
     if (!tn) return;
@@ -214,29 +293,13 @@
 
   document.getElementById('tokenBtn').addEventListener('click', function () { promptToken(true); poll(); });
   document.getElementById('logoutBtn').addEventListener('click', function () {
-    fetch('/auth/logout', { method: 'POST', credentials: 'include' }).finally(function () { location.href = '/kitchen-login'; });
+    fetch('/auth/logout', { method: 'POST', credentials: 'include' }).finally(function () {
+      if (window.RealtimeManager) window.RealtimeManager.destroy();
+      location.href = '/kitchen-login';
+    });
   });
 
-  function setupRealtime(identity) {
-    if (!window.supabase || !identity || !identity.outletId) return Promise.resolve(false);
-    return fetch('/auth/realtime-token', { credentials: 'include' })
-      .then(function (r) { if (!r.ok) throw new Error('Realtime not configured'); return r.json(); })
-      .then(function (config) {
-        realtimeClient = window.supabase.createClient(config.url, config.anonKey, {
-          accessToken: function () { return Promise.resolve(config.accessToken); },
-        });
-        var channel = realtimeClient.channel('kitchen-outlet-' + config.outletId, { config: { private: true } });
-        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: 'restaurant_id=eq.' + config.outletId }, function () { poll(); });
-        return new Promise(function (resolve) {
-          channel.subscribe(function (status) {
-            if (status === 'SUBSCRIBED')                          { realtimeActive = true;  resolve(true);  }
-            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') resolve(false);
-          });
-        });
-      })
-      .catch(function () { realtimeActive = false; return false; });
-  }
-
+  // ── Identity + init ───────────────────────────────────────────────────────
   function loadIdentity() {
     return fetch('/auth/me', { credentials: 'include' })
       .then(function (r) { if (!r.ok) throw new Error('Authentication required'); return r.json(); })
@@ -246,21 +309,21 @@
           Array.prototype.forEach.call(document.querySelectorAll('.manager-only'), function (el) { el.style.display = 'none'; });
           document.querySelector('h1').textContent = 'Kitchen Portal';
         }
-        // Init notifications — kitchen only plays "new order" sounds
         if (window.DineNotify) window.DineNotify.init('kitchen');
-        return setupRealtime(me).then(function () { return poll(); });
+
+        // poll() once for the initial render, then realtime takes over.
+        // setupRealtime resolves before poll() so the WS is open before
+        // the first render — any order that arrives during the fetch is
+        // caught by the channel and triggers a second poll automatically.
+        return poll().then(function () {
+          return setupRealtime(me).then(function (ok) {
+            if (!ok) startFallbackPolling();
+          });
+        });
       })
       .catch(function () { location.href = '/kitchen-login'; });
   }
 
   loadIdentity();
-  setInterval(function () {
-    liveEl.textContent = liveEl.textContent === 'live' ? '\xB7live\xB7' : 'live';
-    if (!realtimeActive) poll();
-  }, POLL_MS);
-
-  // Elapsed-time badge refresh — runs every 60 s independently of polling
-  // so colours change precisely at the 10-min and 20-min boundaries.
-  setInterval(tickElapsedBadges, TIMER_MS);
 
 }());

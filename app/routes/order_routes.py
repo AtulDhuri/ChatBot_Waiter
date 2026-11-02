@@ -276,8 +276,8 @@ async def update_order(
         raise HTTPException(status_code=404, detail="Order not found.")
     if not tenant_matches(_principal, existing["restaurant_id"]):
         raise HTTPException(status_code=403, detail="Order is outside your tenant.")
-    if _principal.get("role") == "kitchen" and (body.payment_status is not None or body.status == "cancelled"):
-        raise HTTPException(status_code=403, detail="Kitchen users may only update kitchen order status.")
+    if _principal.get("role") == "kitchen" and body.payment_status is not None:
+        raise HTTPException(status_code=403, detail="Kitchen users cannot update payment status.")
     if body.status:
         await repo.update_order_status(db, order_id, body.status)
     if body.payment_status:

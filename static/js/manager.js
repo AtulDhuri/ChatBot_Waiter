@@ -9,18 +9,19 @@
   var receiptEl = document.getElementById('receipt');
   var ORDERS    = {};
   var RECEIPT_CFG = {};
-  var REFRESH_MS  = 8000;
-  var _refreshTimer = null;
-  var _lastSig = null;
+  var _lastSig    = null;
 
-  // Elapsed-time helpers (shared logic identical to kitchen.js)
+  // Realtime state
+  var realtimeActive    = false;
+  var _fallbackTimer    = null;
+  var FALLBACK_POLL_MS  = 8000;
+
+  // ── Elapsed-time helpers ──────────────────────────────────────────────────
   var ACTIVE_STATUSES = { 'new': true, preparing: true, ready: true };
 
-  // ---- Notification integration ----
-  // Track what status each order had in the previous render so we can detect
-  // the preparing → ready transition without needing a WebSocket.
-  var _prevStatus   = {};   // { orderId: status }
-  var _firstRender  = true; // true until after the first successful load
+  // Track status per order to detect preparing→ready transitions.
+  var _prevStatus  = {};
+  var _firstRender = true;
 
   function elapsedMinutes(isoTimestamp) {
     var t = new Date(isoTimestamp);
@@ -39,7 +40,7 @@
     return "<span class='elapsed-badge elapsed-" + info.cls + "'>" + info.label + ' ' + info.urgency + '</span>';
   }
 
-  // Tick elapsed badges in-place (avoids full re-render on the 60 s timer)
+  // Tick elapsed badges in-place — no network call.
   function tickElapsedBadges() {
     var badges = cardsEl.querySelectorAll('[data-placed-at]');
     Array.prototype.forEach.call(badges, function (el) {
@@ -48,14 +49,13 @@
       el.className = 'elapsed-badge elapsed-' + info.cls;
       el.textContent = info.label + ' ' + info.urgency;
     });
-    // Also refresh the delayed-orders panel
     var delayedPanel = document.getElementById('delayedPanel');
     if (delayedPanel && Object.keys(ORDERS).length) {
       renderDelayedPanel(Object.values(ORDERS));
     }
   }
 
-  // Start the 60-second elapsed-badge ticker
+  // Cosmetic badge timer — runs unconditionally, no network.
   setInterval(tickElapsedBadges, 60000);
 
   function restaurant() {
@@ -76,7 +76,7 @@
     return p.toString();
   }
 
-  // ---- Receipt config ----
+  // ── Receipt config ────────────────────────────────────────────────────────
   function fetchReceiptCfg() {
     return sfetch('/manager/receipt-profile?restaurant=' + encodeURIComponent(restaurant()))
       .then(function (r) { return r.ok ? r.json() : {}; })
@@ -101,7 +101,7 @@
     document.getElementById('modalBg').classList.remove('open');
   }
 
-  // ---- Render helpers ----
+  // ── Render helpers ────────────────────────────────────────────────────────
   function itemsBlock(items, cur) {
     if (!items || !items.length)
       return "<div class='line'><span class='nm' style='color:#98a2b3'>No items</span></div>";
@@ -121,16 +121,14 @@
       if (o.status !== 'cancelled') { revenue += Number(o.total || 0); count++; }
     });
 
-    // Active-only analytics
-    var activeOrders = orders.filter(function (o) { return ACTIVE_STATUSES[o.status]; });
+    var activeOrders  = orders.filter(function (o) { return ACTIVE_STATUSES[o.status]; });
     var delayedOrders = activeOrders.filter(function (o) { return elapsedMinutes(o.created_at) >= 20; });
 
-    // Prep-time analytics (use all non-cancelled orders for the date range shown)
     var nonCancelled = orders.filter(function (o) { return o.status !== 'cancelled'; });
-    var prepTimes = nonCancelled.map(function (o) { return elapsedMinutes(o.created_at); });
-    var avgPrep   = prepTimes.length ? Math.round(prepTimes.reduce(function (s, v) { return s + v; }, 0) / prepTimes.length) : 0;
-    var maxPrep   = prepTimes.length ? Math.max.apply(null, prepTimes) : 0;
-    var over20    = nonCancelled.length ? Math.round(delayedOrders.length / nonCancelled.length * 100) : 0;
+    var prepTimes    = nonCancelled.map(function (o) { return elapsedMinutes(o.created_at); });
+    var avgPrep      = prepTimes.length ? Math.round(prepTimes.reduce(function (s, v) { return s + v; }, 0) / prepTimes.length) : 0;
+    var maxPrep      = prepTimes.length ? Math.max.apply(null, prepTimes) : 0;
+    var over20       = nonCancelled.length ? Math.round(delayedOrders.length / nonCancelled.length * 100) : 0;
 
     summaryEl.innerHTML =
       "<div class='kpi'><div class='n'>" + orders.length + "</div><div class='l'>Orders shown</div></div>" +
@@ -148,7 +146,7 @@
     }).join('|');
   }
 
-  // ---- Delayed Orders panel ----
+  // ── Delayed Orders panel ──────────────────────────────────────────────────
   function renderDelayedPanel(orders) {
     var panel = document.getElementById('delayedPanel');
     if (!panel) return;
@@ -158,10 +156,7 @@
       .filter(function (x) { return x.mins >= 20; })
       .sort(function (a, b) { return b.mins - a.mins; });
 
-    if (!delayed.length) {
-      panel.style.display = 'none';
-      return;
-    }
+    if (!delayed.length) { panel.style.display = 'none'; return; }
     panel.style.display = 'block';
     var rows = delayed.map(function (x) {
       var o   = x.o;
@@ -190,13 +185,11 @@
 
     var notify = window.DineNotify;
 
-    // First render: seed all visible orders so we don't play stale sounds
     if (_firstRender) {
       if (notify) notify.seedKnown((orders || []).map(function (o) { return o.id; }));
       _firstRender = false;
     }
 
-    // Detect orders that newly became "ready" since the last render
     if (notify) {
       orders.forEach(function (o) {
         if (o.status === 'ready' && _prevStatus[o.id] && _prevStatus[o.id] !== 'ready') {
@@ -205,7 +198,6 @@
       });
     }
 
-    // Update previous-status snapshot
     orders.forEach(function (o) { _prevStatus[o.id] = o.status; });
 
     ORDERS = {};
@@ -227,7 +219,6 @@
       var when = new Date(o.created_at);
       var whenTxt = isNaN(when.getTime()) ? esc(o.created_at) : when.toLocaleString();
 
-      // Elapsed time badge — only for active (non-terminal) orders
       var isActive = ACTIVE_STATUSES[o.status];
       var elapsedBadge = '';
       if (isActive) {
@@ -268,6 +259,9 @@
           (o.payment_status !== 'verified'
             ? "<button class='mark-paid'   data-id='" + esc(o.id) + "' data-payment='paid'>\u2713 Mark bill PAID</button>"
             : "<button class='mark-unpaid' data-id='" + esc(o.id) + "' data-payment='unpaid'>\u21A9 Mark bill UNPAID</button>") +
+          (isActive
+            ? "<button class='cancel-order' data-id='" + esc(o.id) + "' data-order-no='" + esc(o.order_no) + "'>\u274C Cancel order</button>"
+            : '') +
         '</div>';
       cardsEl.appendChild(card);
     });
@@ -304,21 +298,48 @@
             return r.json();
           })
           .then(function () {
-            sfetch('/manager/orders?' + query())
-              .then(function (r) { return r.ok ? r.json() : null; })
-              .then(function (data) {
-                if (!data) return;
-                var sig = signature(data);
-                if (sig !== _lastSig) { _lastSig = sig; render(data); }
-              })
-              .catch(function () {});
+            // With realtime the channel fires immediately; without it do a quick reload.
+            if (!realtimeActive) quietLoad();
           })
           .catch(function (e) { btn.disabled = false; errEl.textContent = e.message; load(); });
       });
     });
+
+    // Cancel order buttons — manager can cancel any active order.
+    // The DB write triggers a realtime push to the kitchen screen which
+    // removes the card immediately via poll() (active_only=true excludes cancelled).
+    Array.prototype.forEach.call(cardsEl.querySelectorAll('button.cancel-order'), function (btn) {
+      btn.addEventListener('click', function () {
+        var orderId  = btn.getAttribute('data-id');
+        var orderNo  = btn.getAttribute('data-order-no');
+        if (!confirm('Cancel order ' + orderNo + '? This cannot be undone.')) return;
+        btn.disabled = true;
+        sfetch('/order/' + encodeURIComponent(orderId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'cancelled' }),
+        })
+          .then(function (r) {
+            if (!r.ok) throw new Error('Could not cancel order');
+            return r.json();
+          })
+          .then(function () {
+            // Remove card immediately from manager view.
+            // Realtime will push the cancellation to kitchen screen.
+            var card = btn.closest('.bill');
+            if (card) card.parentNode && card.parentNode.removeChild(card);
+            delete ORDERS[orderId];
+            // Refresh summary bar to reflect updated counts.
+            renderSummary(Object.values(ORDERS));
+            renderDelayedPanel(Object.values(ORDERS));
+            if (!Object.keys(ORDERS).length) emptyEl.style.display = 'block';
+          })
+          .catch(function (e) { btn.disabled = false; errEl.textContent = e.message; });
+      });
+    });
   }
 
-  // ---- Thermal receipt ----
+  // ── Thermal receipt ───────────────────────────────────────────────────────
   function printReceipt(o) {
     if (!o) return;
     var cfg  = RECEIPT_CFG || {};
@@ -366,7 +387,7 @@
     window.print();
   }
 
-  // ---- Load ----
+  // ── Load & quiet refresh ──────────────────────────────────────────────────
   function load() {
     fetchReceiptCfg();
     sfetch('/manager/orders?' + query())
@@ -379,21 +400,10 @@
       .catch(function (e) { errEl.textContent = e.message; });
   }
 
-  function todayStr() {
-    var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  }
-  function setToday() {
-    var t = todayStr();
-    document.getElementById('dateFrom').value = t;
-    document.getElementById('dateTo').value   = t;
-  }
-
-  // ---- Auto-refresh ----
-  function quietRefresh() {
+  // Like load() but skips render when nothing changed.
+  function quietLoad() {
     if (document.hidden) return;
     if (document.getElementById('modalBg').classList.contains('open')) return;
-    fetchReceiptCfg();
     sfetch('/manager/orders?' + query())
       .then(function (r) { if (!r.ok) throw Error(); return r.json(); })
       .then(function (data) {
@@ -404,10 +414,70 @@
       .catch(function () {});
   }
 
-  // ---- Event wiring ----
-  document.getElementById('applyBtn').onclick         = load;
-  document.getElementById('todayBtn').onclick         = function () { setToday(); load(); };
-  document.getElementById('tokenBtn').onclick         = function () { promptToken(true); };
+  function todayStr() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function setToday() {
+    var t = todayStr();
+    document.getElementById('dateFrom').value = t;
+    document.getElementById('dateTo').value   = t;
+  }
+
+  // ── Realtime setup ────────────────────────────────────────────────────────
+  function setupRealtime(identity) {
+    if (!window.supabase || !window.RealtimeManager) return Promise.resolve(false);
+    if (!identity || !identity.outletId)               return Promise.resolve(false);
+
+    return window.RealtimeManager.init({ outletId: identity.outletId })
+      .then(function (ok) {
+        if (!ok) return false;
+
+        // Reload the full order list on any change to orders.
+        // quietLoad() skips re-render when the signature hasn't changed,
+        // so rapid successive inserts do not flicker the UI.
+        window.RealtimeManager.on('orders', function () { quietLoad(); });
+
+        realtimeActive = true;
+        return true;
+      })
+      .catch(function () { return false; });
+  }
+
+  // ── Degraded polling (when Supabase not configured) ───────────────────────
+  function startFallbackPolling() {
+    if (_fallbackTimer || realtimeActive) return;
+    _fallbackTimer = setInterval(function () {
+      if (!realtimeActive) quietLoad();
+    }, FALLBACK_POLL_MS);
+  }
+
+  // Page focus recovery — pull a fresh snapshot when tab becomes visible.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) quietLoad();
+  });
+  window.addEventListener('focus', quietLoad);
+
+  // ── Auth + init ───────────────────────────────────────────────────────────
+  function loadIdentity() {
+    return fetch('/auth/me', { credentials: 'include' })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 402) { location.href = '/login.html'; throw new Error('auth'); }
+        return r.json();
+      })
+      .then(function (me) {
+        if (window.DineNotify) window.DineNotify.init('manager');
+        return setupRealtime(me).then(function (ok) {
+          if (!ok) startFallbackPolling();
+        });
+      })
+      .catch(function () {});
+  }
+
+  // ── Event wiring ──────────────────────────────────────────────────────────
+  document.getElementById('applyBtn').onclick           = load;
+  document.getElementById('todayBtn').onclick           = function () { setToday(); load(); };
+  document.getElementById('tokenBtn').onclick           = function () { promptToken(true); };
   document.getElementById('receiptSettingsBtn').onclick = openReceiptSettings;
   document.getElementById('rsCancel').onclick           = closeReceiptSettings;
   document.getElementById('modalBg').addEventListener('click', function (e) {
@@ -453,25 +523,27 @@
       .catch(function (e) { errEl.textContent = e.message; });
   };
 
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) quietRefresh(); });
-  window.addEventListener('focus', quietRefresh);
-
   document.getElementById('restaurant').addEventListener('change', function () {
     document.getElementById('availLink').href = 'availability.html?r=' + encodeURIComponent(restaurant());
+    // When switching restaurant, re-init realtime for the new outlet.
+    // Re-fetch identity first so we get the updated outletId.
+    if (window.RealtimeManager) window.RealtimeManager.destroy();
+    realtimeActive = false;
+    if (_fallbackTimer) { clearInterval(_fallbackTimer); _fallbackTimer = null; }
+    load();
+    loadIdentity();
   });
 
-  // ---- Init ----
+  // ── Init ──────────────────────────────────────────────────────────────────
   (function () {
     var r = new URLSearchParams(location.search).get('r');
     if (r) {
       document.getElementById('restaurant').value = r;
       document.getElementById('availLink').href   = 'availability.html?r=' + encodeURIComponent(r);
     }
-    // Init notifications — manager plays "order ready" sounds
-    if (window.DineNotify) window.DineNotify.init('manager');
     setToday();
     load();
-    _refreshTimer = setInterval(quietRefresh, REFRESH_MS);
+    loadIdentity();
   }());
 
 }());
