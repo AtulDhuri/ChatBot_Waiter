@@ -599,6 +599,33 @@ async def get_or_create_qr_token(
     return row[0]
 
 
+async def get_or_create_takeaway_qr_token(
+    session: AsyncSession,
+    restaurant_id: int,
+    token: str,
+) -> str:
+    """Return the durable opaque token for a restaurant's takeaway QR."""
+    inserted = (
+        await session.execute(
+            text(
+                """
+                INSERT INTO qr_tokens (token, restaurant_id, table_number, token_type)
+                VALUES (:token, :rid, NULL, 'takeaway')
+                ON CONFLICT DO NOTHING
+                RETURNING token
+                """
+            ),
+            {"token": token, "rid": restaurant_id},
+        )
+    ).first()
+    if inserted:
+        return inserted[0]
+    row = (await session.execute(text(
+        "SELECT token FROM qr_tokens WHERE restaurant_id = :rid AND token_type = 'takeaway'"
+    ), {"rid": restaurant_id})).first()
+    return row[0]
+
+
 async def resolve_qr_token(
     session: AsyncSession, token: str
 ) -> Optional[Dict[str, Any]]:
@@ -613,7 +640,7 @@ async def resolve_qr_token(
     row = (
         await session.execute(
             text(
-                "SELECT q.restaurant_id, q.table_number, r.slug, r.name, "
+                "SELECT q.restaurant_id, q.table_number, q.token_type, r.slug, r.name, "
                 "r.payment_mode "
                 "FROM qr_tokens q "
                 "JOIN restaurants r ON r.id = q.restaurant_id "
@@ -900,7 +927,7 @@ async def list_manager_orders(
         await session.execute(
             text(
                 f"""
-                SELECT id, order_no, order_type, table_number, customer_name,
+                SELECT id, order_no, session_id, order_type, table_number, customer_name,
                        zone, items, subtotal, tax, total, currency, status,
                        payment_status, created_at
                 FROM orders

@@ -28,7 +28,7 @@ import {
   setActiveCart,
   menuRows,
 } from "./cart.js";
-import { startStatusPolling, showOrders } from "./status.js";
+import { startStatusPolling, showOrders, pollStatusOnce } from "./status.js";
 import {
   matchDish,
   looksOrderish,
@@ -77,7 +77,9 @@ export function placeOrder(orderType) {
       ]);
       addMessage("✅ Order placed!", "bot");
       addMessage(null, "bot", card);
-      startStatusPolling();
+      pollStatusOnce(true).then(function () {
+        startStatusPolling();
+      });
     })
     .catch(function (e) {
       addMessage("Couldn't place the order: " + e.message, "bot");
@@ -105,14 +107,14 @@ export function showOrderOverview() {
 export function menuItemRow(item) {
   var soldOut = item.available === false;
   var info = el("div", { class: "wa-mi-info" }, [
-    el("div", { class: "wa-mi-name" }, [
-      item.name +
-        (item.price != null ? "  " + money(item.price) : "") +
-        (soldOut ? "  · Sold out" : ""),
-    ]),
+    el("div", { class: "wa-mi-name" }, [item.name]),
+    item.price != null
+      ? el("div", { class: "wa-mi-price" }, [money(item.price)])
+      : null,
     item.description
       ? el("div", { class: "wa-mi-desc" }, [item.description])
       : null,
+    soldOut ? el("div", { class: "wa-mi-sold" }, ["Sold out"]) : null,
   ]);
   var action = el("div", { class: "wa-mi-action" }, []);
 
@@ -126,22 +128,13 @@ export function menuItemRow(item) {
     }
     var inCart = !!findCartItem(item.name);
     if (inCart) {
+      var qty = findCartItem(item.name).quantity;
       action.appendChild(
-        el("button", { class: "wa-add", disabled: "disabled" }, ["Added"])
-      );
-      action.appendChild(
-        el(
-          "button",
-          {
-            class: "wa-remove wa-mi-remove",
-            title: "Remove from order",
-            "aria-label": "Remove " + item.name + " from order",
-            onclick: function () {
-              removeItem(item.name);
-            },
-          },
-          ["✕"]
-        )
+        el("div", { class: "wa-qty wa-menu-qty" }, [
+          el("button", { class: "wa-qty-btn", "aria-label": "Decrease " + item.name, onclick: function () { changeQty(item.name, -1); } }, ["−"]),
+          el("span", { class: "wa-qty-n" }, [String(qty)]),
+          el("button", { class: "wa-qty-btn", "aria-label": "Increase " + item.name, onclick: function () { changeQty(item.name, 1); } }, ["+"]),
+        ])
       );
     } else {
       action.appendChild(
@@ -186,7 +179,7 @@ export function showMenu() {
       var search = el("input", {
         class: "wa-input wa-menu-search",
         type: "search",
-        placeholder: "🔍 Search dishes…",
+        placeholder: "Search dishes…",
         "aria-label": "Search menu",
       });
 

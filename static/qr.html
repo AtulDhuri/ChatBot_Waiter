@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DineOS — Table QR Codes</title>
+    <title>DineOS — QR Codes</title>
     <link rel="stylesheet" href="/css/common.css" />
     <link rel="stylesheet" href="/css/qr.css" />
   </head>
@@ -12,8 +12,8 @@
 
     <!-- ── Controls ── -->
     <div class="card controls" id="controlsCard">
-      <h1>Generate table QR codes</h1>
-      <p class="muted">Each table gets a unique QR code. Guests scan and land directly on the ordering page scoped to their table.</p>
+      <h1>Generate QR codes</h1>
+      <p class="muted">Generate a table QR for dine-in guests or one takeaway QR for pickup orders.</p>
       <div class="row">
         <div>
           <label for="restaurant">Restaurant slug</label>
@@ -29,6 +29,7 @@
       <p class="hint">Leave blank to use this page's own origin. The restaurant slug is never put in the QR URL.</p>
       <div class="btn-row">
         <button id="go">Generate QR</button>
+        <button id="takeaway" class="btn-secondary">🥡 Generate takeaway QR</button>
         <button id="printAll" class="btn-secondary">🖨️ Print all tables</button>
       </div>
       <div id="printAllStatus" class="status-msg" style="display:none"></div>

@@ -49,6 +49,21 @@ button.ghost { background: #0f172a; }
   display: grid; gap: 14px;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 }
+.session-bill {
+  grid-column: 1 / -1;
+  background: rgba(99,102,241,.08); border: 1px solid rgba(129,140,248,.45);
+  border-radius: 14px; padding: 14px 16px;
+}
+.session-bill-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.session-bill-title { font-size: 16px; font-weight: 800; }
+.session-bill-sub { color: #a5b4fc; font-size: 12px; margin-top: 4px; }
+.session-bill-total { color: #f8fafc; font-size: 20px; font-weight: 800; white-space: nowrap; }
+.session-bill-actions { display: flex; gap: 8px; margin: 12px 0; }
+.session-bill-actions button { flex: 0 1 220px; font-size: 13px; }
+button.print-session { background: #0e9f6e; color: #fff; border: none; }
+button.settle-session { background: #6366f1; color: #fff; border: none; }
+.session-bill-orders { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.session-bill-orders .bill { background: rgba(2,6,23,.34); }
 .bill {
   background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.10);
   border-radius: 14px; padding: 14px 16px;

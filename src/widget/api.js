@@ -7,6 +7,7 @@ import {
   CONFIG,
   IS_TOKEN,
   LEGACY_SLUG,
+  TAKEAWAY_MODE,
   DEVICE_ID,
   SESSION_KEY,
   api,
@@ -22,6 +23,31 @@ import {
 
 export function startSession(label) {
   var takeaway = state.orderType === "takeaway";
+  if (takeaway && TAKEAWAY_MODE && IS_TOKEN) {
+    return fetch(api("/qr/takeaway-session"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: CONFIG.qrToken,
+        customer_name: label,
+        device_id: DEVICE_ID,
+      }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("takeaway session failed");
+      return r.json();
+    }).then(function (data) {
+      state.token = data.session_id;
+      state.tableNumber = "-";
+      state.paymentMode = data.payment_mode || "prepaid";
+      state.customerName = label;
+      if (data.restaurant_name) {
+        CONFIG.title = data.restaurant_name;
+        if (ui.titleEl) ui.titleEl.firstChild.textContent = CONFIG.title;
+      }
+      saveSession();
+      return data;
+    });
+  }
   return fetch(api("/session"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -90,12 +116,8 @@ export function resolveQrToken() {
             ? " at table " + state.tableNumber
             : "";
         addMessage(
-          (data.continued ? "Welcome back" : "Welcome") +
-            " to " +
-            CONFIG.title +
-            "!" +
-            (where ? " You're" + where + "." : "") +
-            " Ask about the menu, place an order, or request the bill.",
+          "Welcome to " + CONFIG.title + ". I can help you browse the menu, " +
+            "answer questions, and place orders.",
           "bot"
         );
         renderQuickChips();
@@ -127,6 +149,7 @@ export function reauthFromToken() {
   if (!IS_TOKEN || !CONFIG.qrToken)
     return Promise.reject(new Error("no token"));
   _qrResolving = null;
+  stopStatusPolling();
   return resolveQrToken().then(function () {
     return state.token;
   });
@@ -195,14 +218,15 @@ export function getJson(urlFn, _retried) {
 
 export function fetchMenu() {
   var url;
-  if (LEGACY_SLUG) {
-    url = "/menu?restaurant=" + encodeURIComponent(LEGACY_SLUG);
-    if (state.token) url += "&session_id=" + encodeURIComponent(state.token);
-  } else {
-    if (!state.token) {
-      return Promise.resolve({ items: [], categories: {} });
-    }
+  var slug = String(LEGACY_SLUG || "").trim();
+  // QR sessions are the preferred tenant boundary. Only use the legacy slug
+  // form when it is non-empty, so the client never emits /menu?restaurant=.
+  if (state.token) {
     url = "/menu?session_id=" + encodeURIComponent(state.token);
+  } else if (slug) {
+    url = "/menu?restaurant=" + encodeURIComponent(slug);
+  } else {
+    return Promise.resolve({ items: [], categories: {} });
   }
   return fetch(api(url))
     .then(function (r) {

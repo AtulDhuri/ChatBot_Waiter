@@ -179,6 +179,73 @@
       "<div class='delayed-list'>" + rows + '</div>';
   }
 
+  function sessionGroups(orders) {
+    var bySession = {};
+    (orders || []).forEach(function (o) {
+      if (!o.session_id) return;
+      if (!bySession[o.session_id]) bySession[o.session_id] = [];
+      bySession[o.session_id].push(o);
+    });
+    Object.keys(bySession).forEach(function (sid) {
+      var members = bySession[sid];
+      var billable = members.filter(function (o) { return o.status !== 'cancelled'; });
+      var unpaid = billable.some(function (o) { return o.payment_status !== 'verified'; });
+      if (billable.length < 2 || !unpaid) delete bySession[sid];
+    });
+    return bySession;
+  }
+
+  function combinedBill(orders) {
+    var active = (orders || []).filter(function (o) { return o.status !== 'cancelled'; });
+    var first = active[0] || orders[0];
+    var items = [];
+    active.forEach(function (o) {
+      (o.items || []).forEach(function (item) {
+        items.push({
+          name: o.order_no + ' · ' + item.name,
+          quantity: item.quantity,
+          price: item.price,
+          line_total: item.line_total,
+        });
+      });
+    });
+    return {
+      order_no: active.map(function (o) { return o.order_no; }).join(', '),
+      order_type: first.order_type,
+      table_number: first.table_number,
+      customer_name: first.customer_name,
+      zone: first.zone,
+      items: items,
+      subtotal: active.reduce(function (sum, o) { return sum + Number(o.subtotal || 0); }, 0),
+      tax: active.reduce(function (sum, o) { return sum + Number(o.tax || 0); }, 0),
+      total: active.reduce(function (sum, o) { return sum + Number(o.total || 0); }, 0),
+      currency: first.currency,
+      created_at: active.reduce(function (oldest, o) {
+        return !oldest || new Date(o.created_at) < new Date(oldest) ? o.created_at : oldest;
+      }, ''),
+    };
+  }
+
+  function renderSessionHeader(sessionId, members) {
+    var bill = combinedBill(members);
+    var unpaid = members.some(function (o) { return o.status !== 'cancelled' && o.payment_status !== 'verified'; });
+    var wrapper = document.createElement('div');
+    wrapper.className = 'session-bill';
+    wrapper.innerHTML =
+      "<div class='session-bill-head'>" +
+        "<div><div class='session-bill-title'>Open table bill</div>" +
+        "<div class='session-bill-sub'>Table " + esc(bill.table_number) + " · " + members.length + " orders · " +
+          members.map(function (o) { return esc(o.order_no); }).join(', ') + '</div></div>' +
+        "<div class='session-bill-total'>" + money(bill.currency, bill.total) + '</div>' +
+      '</div>' +
+      "<div class='session-bill-actions'>" +
+        "<button class='print-session' data-session-id='" + esc(sessionId) + "'>🖨 Print combined receipt</button>" +
+        (unpaid ? "<button class='settle-session' data-session-id='" + esc(sessionId) + "'>✓ Mark session PAID</button>" : '') +
+      '</div>' +
+      "<div class='session-bill-orders'></div>";
+    return wrapper;
+  }
+
   function render(orders) {
     errEl.textContent = '';
     cardsEl.innerHTML = '';
@@ -209,6 +276,8 @@
     if (!orders.length) { emptyEl.style.display = 'block'; return; }
     emptyEl.style.display = 'none';
 
+    var groupedSessions = sessionGroups(orders);
+    var sessionContainers = {};
     orders.forEach(function (o) {
       ORDERS[o.id] = o;
       var cur  = o.currency;
@@ -263,12 +332,49 @@
             ? "<button class='cancel-order' data-id='" + esc(o.id) + "' data-order-no='" + esc(o.order_no) + "'>\u274C Cancel order</button>"
             : '') +
         '</div>';
-      cardsEl.appendChild(card);
+      var session = o.session_id && groupedSessions[o.session_id];
+      if (session) {
+        if (!sessionContainers[o.session_id]) {
+          sessionContainers[o.session_id] = renderSessionHeader(o.session_id, session);
+          cardsEl.appendChild(sessionContainers[o.session_id]);
+        }
+        sessionContainers[o.session_id].querySelector('.session-bill-orders').appendChild(card);
+      } else {
+        cardsEl.appendChild(card);
+      }
     });
 
     // Print buttons
     Array.prototype.forEach.call(cardsEl.querySelectorAll('button.print'), function (btn) {
       btn.addEventListener('click', function () { printReceipt(ORDERS[btn.getAttribute('data-id')]); });
+    });
+
+    // Combined session bill actions. Individual order cards remain available
+    // inside the group for kitchen status and audit history.
+    Array.prototype.forEach.call(cardsEl.querySelectorAll('button.print-session'), function (btn) {
+      btn.addEventListener('click', function () {
+        var members = groupedSessions[btn.getAttribute('data-session-id')];
+        if (members) printReceipt(combinedBill(members));
+      });
+    });
+
+    Array.prototype.forEach.call(cardsEl.querySelectorAll('button.settle-session'), function (btn) {
+      btn.addEventListener('click', function () {
+        var sessionId = btn.getAttribute('data-session-id');
+        if (!confirm('Mark all orders in this table bill as PAID?')) return;
+        btn.disabled = true;
+        sfetch('/manager/session/settle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ restaurant: restaurant(), session_id: sessionId, payment_method: 'cash' }),
+        })
+          .then(function (r) {
+            if (!r.ok) throw new Error('Could not settle table bill');
+            return r.json();
+          })
+          .then(function () { load(); })
+          .catch(function (e) { btn.disabled = false; errEl.textContent = e.message; });
+      });
     });
 
     // Payment toggle

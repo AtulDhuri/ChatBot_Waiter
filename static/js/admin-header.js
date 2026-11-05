@@ -17,8 +17,7 @@
     if (role === 'admin') links.push(['Admin setup', '/admin.html?r=' + encodeURIComponent(slug)]);
     if (role === 'admin' || role === 'manager') links.push(
       ['Manager',          '/manager.html?r='      + encodeURIComponent(slug)],
-      ['Dish availability', '/availability.html?r=' + encodeURIComponent(slug)],
-      ['Reports',          '/reports.html?r='       + encodeURIComponent(slug)]
+      ['Dish availability', '/availability.html?r=' + encodeURIComponent(slug)]
     );
     if (role === 'admin' || role === 'manager' || role === 'kitchen') links.push(['Kitchen', '/kitchen.html?r=' + encodeURIComponent(slug)]);
     if (role === 'admin' || role === 'manager') links.push(['QR Codes', '/qr.html?r=' + encodeURIComponent(slug)]);
@@ -35,7 +34,8 @@
       .catch(function(){})
       .finally(function(){
         fetch('/auth/logout', {method:'POST', credentials:'include'}).finally(function () {
-          if (role === 'kitchen') { location.href='/kitchen-login'; }
+          var onKitchenPage = document.body.getAttribute('data-portal') === 'kitchen' || /\/kitchen(?:\.html)?$/.test(location.pathname);
+          if (onKitchenPage || role === 'kitchen') { location.href='/kitchen-login'; }
           else if (role === 'manager') { location.href='/manager-login'; }
           else { location.href='/login.html'; }
         });

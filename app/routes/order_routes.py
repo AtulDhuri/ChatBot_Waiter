@@ -32,12 +32,12 @@ from app.services.payment_modes import is_postpaid
 
 
 # Map internal kitchen statuses to the customer-facing label set
-# (Placed -> Preparing -> Served). Payment is tracked separately and never
+# (Placed -> Preparing -> Ready -> Served). Payment is tracked separately and never
 # appears as a kitchen-progress status.
 _CUSTOMER_STATUS = {
     "new": "Placed",
     "preparing": "Preparing",
-    "ready": "Preparing",
+    "ready": "Ready",
     "served": "Served",
     "cancelled": "Cancelled",
 }

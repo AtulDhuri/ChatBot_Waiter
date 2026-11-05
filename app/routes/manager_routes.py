@@ -1,9 +1,9 @@
 """Manager dashboard API.
 
-Read-only order views with filters and CSV export, plus table->zone and dish
-availability management. All endpoints are staff-guarded. These are additive:
-they never mutate existing order/billing data except the explicit management
-actions (set a table's zone, toggle a dish's availability).
+Read-only order views and CSV export, plus session-level bill settlement,
+table->zone and dish availability management. All endpoints are staff-guarded.
+These are additive: they never merge or delete order records; settlement only
+updates payment state for the selected customer session.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from app.db import repository as repo
 from app.routes.deps import get_db, require_staff, tenant_matches
 from app.schemas import (
     ManagerOrder,
+    ManagerSessionSettleRequest,
     ReceiptProfile,
     ReceiptProfileUpdate,
     SecurityEvent,
@@ -111,6 +112,7 @@ def _to_manager_order(r: dict) -> ManagerOrder:
     return ManagerOrder(
         id=r["id"],
         order_no=r["order_no"],
+        session_id=r.get("session_id"),
         order_type=r.get("order_type", "dine_in"),
         table_number=r["table_number"],
         customer_name=r.get("customer_name"),
@@ -142,6 +144,36 @@ async def manager_orders(
         db, rest["id"], status=status, date_from=date_from, date_to=date_to
     )
     return [_to_manager_order(r) for r in rows]
+
+
+@router.post("/session/settle")
+async def settle_manager_session(
+    body: ManagerSessionSettleRequest,
+    db: AsyncSession = Depends(get_db),
+    _principal: Dict[str, Any] = Depends(require_staff),
+):
+    """Mark every non-cancelled order in one staff-visible session paid.
+
+    Orders stay separate for kitchen and audit purposes. This endpoint only
+    applies the payment result to the session's open bill atomically from the
+    manager's point of view.
+    """
+    rest = await _resolve_restaurant(db, body.restaurant, _principal)
+    session_row = await repo.get_session_row(db, body.session_id)
+    if session_row is None or session_row["restaurant_id"] != rest["id"]:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    changed = await repo.mark_session_paid(db, body.session_id)
+    closed = await repo.session_orders_all_served_and_paid(db, body.session_id)
+    if closed:
+        await repo.close_session_orders(db, body.session_id)
+        await repo.end_session(db, body.session_id)
+    return {
+        "session_id": body.session_id,
+        "payment_method": body.payment_method,
+        "orders_marked_paid": changed,
+        "closed": closed,
+    }
 
 
 @router.get("/orders.csv")

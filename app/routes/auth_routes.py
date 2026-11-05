@@ -238,6 +238,7 @@ async def session_realtime_token(session_id: str, db: AsyncSession = Depends(get
         "url":          settings.resolved_supabase_url,
         "anonKey":      settings.supabase_anon_key,
         "restaurantId": row["restaurant_id"],
+        "sessionId":    row["id"],
     }
 
 

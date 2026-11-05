@@ -60,14 +60,22 @@ class QrSession(BaseModel):
 
 
 class QrTokenRequest(BaseModel):
-    """Staff-only: mint (or fetch) the durable token for a table."""
+    """Staff-only: mint (or fetch) a durable table or takeaway token."""
     restaurant: str = Field(..., max_length=64)
-    table_number: str = Field(..., max_length=32)
+    table_number: Optional[str] = Field(default=None, max_length=32)
+    mode: str = Field(default="table", pattern="^(table|takeaway)$")
 
 
 class QrTokenResponse(BaseModel):
     token: str
-    table_number: str
+    table_number: Optional[str] = None
+    mode: str = "table"
+
+
+class QrTakeawaySessionRequest(BaseModel):
+    token: str = Field(..., min_length=1, max_length=128)
+    customer_name: str = Field(..., min_length=1, max_length=120)
+    device_id: str = Field(default="", max_length=128)
 
 
 # ---- Cart / Menu ---------------------------------------------------------
@@ -325,6 +333,7 @@ class OrderStatusUpdate(BaseModel):
 class ManagerOrder(BaseModel):
     id: int
     order_no: str
+    session_id: Optional[str] = None
     order_type: str = "dine_in"
     table_number: str
     customer_name: Optional[str] = None
@@ -337,6 +346,12 @@ class ManagerOrder(BaseModel):
     status: str
     payment_status: str
     created_at: Any
+
+
+class ManagerSessionSettleRequest(BaseModel):
+    restaurant: str = Field(default="demo", max_length=64)
+    session_id: str = Field(..., min_length=1, max_length=128)
+    payment_method: str = Field(default="cash", pattern="^(cash|card|upi|other)$")
 
 
 class ReceiptProfile(BaseModel):

@@ -16,6 +16,7 @@ from app.routes.deps import get_db, require_staff, tenant_matches
 from app.schemas import (
     QrResolveRequest,
     QrSession,
+    QrTakeawaySessionRequest,
     QrTokenRequest,
     QrTokenResponse,
 )
@@ -123,6 +124,36 @@ async def resolve_qr(
     )
 
 
+@router.post("/takeaway-session", response_model=QrSession)
+async def create_takeaway_session(
+    body: QrTakeawaySessionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a fresh takeaway session from the restaurant's opaque QR token."""
+    mapping = await repo.resolve_qr_token(db, body.token.strip())
+    if mapping is None or mapping.get("token_type") != "takeaway":
+        raise HTTPException(status_code=404, detail="This code isn't valid.")
+    customer_name = body.customer_name.strip()
+    if not customer_name:
+        raise HTTPException(status_code=422, detail="Customer name is required.")
+    session_id = sess.new_session_id()
+    device_id = _clean_device_id(body.device_id)
+    await repo.create_session(
+        db, session_id, mapping["restaurant_id"], table_number="-",
+        customer_name=customer_name, order_type="takeaway",
+        zone=None, device_id=device_id or None,
+        ua_hash=sess.hash_ua(request.headers.get("user-agent")),
+        ttl_seconds=SESSION_TTL_SECONDS,
+    )
+    return QrSession(
+        session_id=sess.sign(session_id), table_number="-",
+        restaurant_name=mapping["name"], order_type="takeaway", zone=None,
+        cart=[], continued=False,
+        payment_mode=mapping.get("payment_mode") or "prepaid",
+    )
+
+
 @router.post("/token", response_model=QrTokenResponse)
 async def mint_token(
     body: QrTokenRequest,
@@ -139,11 +170,17 @@ async def mint_token(
         raise HTTPException(status_code=404, detail="Unknown restaurant.")
     if not tenant_matches(_principal, rest["id"]):
         raise HTTPException(status_code=403, detail="Outlet is outside your tenant.")
-    table_number = body.table_number.strip()
-    if not table_number:
+    table_number = body.table_number.strip() if body.table_number else ""
+    if body.mode == "table" and not table_number:
         raise HTTPException(status_code=422, detail="Table number is required.")
+
+    if body.mode == "takeaway":
+        token = await repo.get_or_create_takeaway_qr_token(
+            db, rest["id"], sess.new_qr_token()
+        )
+        return QrTokenResponse(token=token, table_number=None, mode="takeaway")
 
     token = await repo.get_or_create_qr_token(
         db, rest["id"], table_number, sess.new_qr_token()
     )
-    return QrTokenResponse(token=token, table_number=table_number)
+    return QrTokenResponse(token=token, table_number=table_number, mode="table")

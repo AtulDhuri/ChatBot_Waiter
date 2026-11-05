@@ -48,6 +48,11 @@ function mockFetch(url, opts) {
   if (u.includes("/menu")) return json(MENU);
   if (u.includes("/session"))
     return json({ session_id: "sess-123", restaurant_name: "Demo Bistro" });
+  if (u.includes("/my-orders"))
+    return json({
+      orders: [{ order_no: "A1", status: "Placed", items: [], total: 14.85 }],
+      session_ended: false,
+    });
   if (u.includes("/bill"))
     return json({
       table_number: "12",
@@ -93,9 +98,9 @@ window.eval(bundle);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 async function run() {
-  // 1) Boot built the FAB and exposed the public API.
+  // 1) Boot renders the full-screen chat page and exposes the public API.
   await tick();
-  check("FAB rendered", !!window.document.querySelector(".wa-fab"));
+  check("no floating FAB", !window.document.querySelector(".wa-fab"));
   check("window.ChatbotWaiter exposed", typeof window.ChatbotWaiter === "object");
   check("prefetched menu (restaurant name)", calls.some((c) => c.includes("/menu")));
 
@@ -127,7 +132,7 @@ async function run() {
 
   // 5) View menu via quick chip.
   const chips = [...window.document.querySelectorAll(".wa-chip")];
-  const menuChip = chips.find((c) => /view menu/i.test(c.textContent));
+  const menuChip = chips.find((c) => /show menu/i.test(c.textContent));
   check("menu quick-chip present", !!menuChip);
   menuChip.click();
   await tick();
@@ -141,16 +146,13 @@ async function run() {
   check("two Add buttons available", addButtons.length === 2);
   addButtons.forEach((b) => b.click());
   await tick();
-  // After adding, the rows flip to a disabled "Added" button.
-  const addedBtns = [...window.document.querySelectorAll(".wa-menu-item .wa-add")].filter(
-    (b) => /added/i.test(b.textContent)
-  );
-  check("both menu rows now show 'Added'", addedBtns.length === 2);
+  // After adding, each row shows a compact quantity stepper.
+  const qtyControls = [...window.document.querySelectorAll(".wa-menu-item .wa-menu-qty")];
+  check("both menu rows show quantity controls", qtyControls.length === 2);
 
-  const cartChip = [...window.document.querySelectorAll(".wa-chip")].find((c) =>
-    /my order/i.test(c.textContent)
-  );
-  cartChip.click();
+  const chatInput = window.document.querySelector(".wa-footer input");
+  chatInput.value = "cart";
+  chatInput.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter" }));
   await tick();
   const cartRows = window.document.querySelectorAll(".wa-cart-row");
   check("cart view shows 2 line items", cartRows.length === 2);
@@ -172,10 +174,9 @@ async function run() {
   check("row has a wa-cart-top header line", !!firstRow.querySelector(".wa-cart-top"));
 
   // 7) Ask for the bill via the chip and confirm totals render.
-  const billChip = [...window.document.querySelectorAll(".wa-chip")].find((c) =>
-    /my bill/i.test(c.textContent)
-  );
-  billChip.click();
+  const billInput = window.document.querySelector(".wa-footer input");
+  billInput.value = "bill";
+  billInput.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter" }));
   await tick();
   await tick();
   const billTable = window.document.querySelector(".wa-bill table");
@@ -183,7 +184,15 @@ async function run() {
   const billText = window.document.querySelector(".wa-bill").textContent;
   check("bill shows computed total $14.85", billText.includes("14.85"));
 
-  // 8) No uncaught errors were thrown during the whole flow.
+  // 8) Customer status is rendered from the session-scoped orders endpoint.
+  const statusInput = window.document.querySelector(".wa-footer input");
+  statusInput.value = "order";
+  statusInput.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter" }));
+  await tick();
+  check("order status card rendered", !!window.document.querySelector(".wa-status-card"));
+  check("order status shows Placed", window.document.querySelector(".wa-status-card").textContent.includes("Placed"));
+
+  // 9) No uncaught errors were thrown during the whole flow.
   console.log(`\n${passed} checks passed. API calls observed:`);
   console.log("  " + calls.join("\n  "));
 }

@@ -33,6 +33,8 @@ COPY package.json package-lock.json* ./
 COPY src ./src
 COPY static ./static
 COPY scripts ./scripts
+# The application package is required by the uvicorn entrypoint.
+COPY app ./app
 
 RUN npm ci --include=dev && npm run build && npm prune --production
 

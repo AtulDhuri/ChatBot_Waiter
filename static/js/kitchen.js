@@ -15,7 +15,7 @@
   var currentRole   = '';
   var realtimeActive = false;
   var NEXT       = { 'new': 'preparing', preparing: 'ready', ready: 'served' };
-  var NEXT_LABEL = { 'new': 'Start cooking', preparing: 'Mark ready', ready: 'Mark served' };
+  var NEXT_LABEL = { 'new': 'Start cooking', preparing: 'Mark as ready', ready: 'Mark served' };
 
   // ── Elapsed-time helpers ──────────────────────────────────────────────────
   var TERMINAL_STATUSES = { served: true, cancelled: true };
@@ -292,13 +292,6 @@
   });
 
   document.getElementById('tokenBtn').addEventListener('click', function () { promptToken(true); poll(); });
-  document.getElementById('logoutBtn').addEventListener('click', function () {
-    fetch('/auth/logout', { method: 'POST', credentials: 'include' }).finally(function () {
-      if (window.RealtimeManager) window.RealtimeManager.destroy();
-      location.href = '/kitchen-login';
-    });
-  });
-
   // ── Identity + init ───────────────────────────────────────────────────────
   function loadIdentity() {
     return fetch('/auth/me', { credentials: 'include' })

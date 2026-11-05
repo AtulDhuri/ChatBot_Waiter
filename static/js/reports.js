@@ -144,7 +144,23 @@
   function run() {
     document.getElementById('revenueChart').innerHTML = "<div class='skeleton' style='height:100%'></div>";
     authFetch('/reports/dashboard?' + qs())
-      .then(function (r) { if (!r.ok) return r.json().then(function (e) { throw Error(e.detail || 'Unable to load analytics'); }); return r.json(); })
+      .then(function (r) {
+        return r.text().then(function (body) {
+          var contentType = r.headers.get('content-type') || '';
+          var redirectedToLogin = r.redirected && /\/login(?:\.html)?$/.test(new URL(r.url, location.href).pathname);
+          if (redirectedToLogin) {
+            location.href = '/login.html';
+            throw Error('Authentication required');
+          }
+          if (!/application\/json/i.test(contentType)) {
+            throw Error('Analytics API returned ' + r.status + ' ' + (contentType || 'a non-JSON response'));
+          }
+          var data;
+          try { data = JSON.parse(body); } catch (_) { throw Error('Analytics API returned invalid JSON.'); }
+          if (!r.ok) throw Error(data.detail || 'Unable to load analytics');
+          return data;
+        });
+      })
       .then(showData)
       .catch(function (e) { document.getElementById('revenueChart').innerHTML = "<div class='error'>" + esc(e.message) + '</div>'; });
   }

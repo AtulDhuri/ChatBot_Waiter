@@ -1,7 +1,7 @@
 // Panel/chat rendering: the table/takeaway prompt, identifier prompt, quick
 // chips, the chat input, and the panel + FAB construction and toggle.
 
-import { CONFIG, IS_TOKEN } from "./config.js";
+import { CONFIG, IS_TOKEN, TAKEAWAY_MODE } from "./config.js";
 import { state, ui } from "./state.js";
 import { addMessage, el } from "./dom.js";
 import { startSession, resolveQrToken, askQuestion } from "./api.js";
@@ -110,28 +110,19 @@ export function askIdentifier(orderType) {
 }
 
 export function renderQuickChips() {
+  function ask(prompt) {
+    return function () {
+      addMessage(prompt, "user");
+      var t = addMessage("…", "bot");
+      askQuestion(prompt)
+        .then(function (r) { t.querySelector(".wa-bubble").textContent = r.answer; })
+        .catch(function () { t.querySelector(".wa-bubble").textContent = "Sorry, try again."; });
+    };
+  }
   var chips = el("div", { class: "wa-quick" }, [
-    el("button", { class: "wa-chip", onclick: showMenu }, ["📋 View menu"]),
-    el("button", { class: "wa-chip", onclick: showOrderOverview }, ["🛒 My orders"]),
-    el("button", { class: "wa-chip", onclick: showBill }, ["🧾 My bill"]),
-    el(
-      "button",
-      {
-        class: "wa-chip",
-        onclick: function () {
-          addMessage("What do you recommend?", "user");
-          var t = addMessage("…", "bot");
-          askQuestion("What do you recommend?")
-            .then(function (r) {
-              t.querySelector(".wa-bubble").textContent = r.answer;
-            })
-            .catch(function () {
-              t.querySelector(".wa-bubble").textContent = "Sorry, try again.";
-            });
-        },
-      },
-      ["⭐ Recommend"]
-    ),
+    el("button", { class: "wa-chip", onclick: showMenu }, ["Show Menu"]),
+    el("button", { class: "wa-chip", onclick: ask("What are the popular items?") }, ["Popular Items"]),
+    el("button", { class: "wa-chip", onclick: ask("Show vegetarian dishes") }, ["Veg Dishes"]),
   ]);
   ui.body.appendChild(chips);
   ui.body.scrollTop = ui.body.scrollHeight;
@@ -166,19 +157,11 @@ export function buildPanel() {
   ui.badge = el("span", { class: "wa-cart-badge" }, ["0"]);
   ui.badge.style.display = "none";
 
-  ui.titleEl = el("div", {}, [
+  ui.titleEl = el("div", { class: "wa-title" }, [
     document.createTextNode(CONFIG.title),
     el("small", {}, [_headerSub()]),
   ]);
-  var header = el("div", { class: "wa-header" }, [
-    ui.titleEl,
-    el("button", {
-      class: "wa-close",
-      html: "&times;",
-      "aria-label": "Close",
-      onclick: togglePanel,
-    }),
-  ]);
+  var header = el("header", { class: "wa-header" }, [ui.titleEl, ui.badge]);
 
   ui.body = el("div", { class: "wa-body" });
   ui.footer = el("div", { class: "wa-footer" });
@@ -198,11 +181,15 @@ export function buildPanel() {
         : "Welcome back to table " + state.tableNumber;
     addMessage(who + "! How can I help? (menu / bill)", "bot");
     renderQuickChips();
+  } else if (IS_TOKEN && TAKEAWAY_MODE) {
+    askIdentifier("takeaway");
   } else if (IS_TOKEN) {
     renderChat();
     ui.input.disabled = true;
     addMessage("One moment — getting your table ready…", "bot");
     resolveQrToken().catch(function () {});
+  } else if (TAKEAWAY_MODE) {
+    askIdentifier("takeaway");
   } else {
     renderTablePrompt();
   }
@@ -210,28 +197,17 @@ export function buildPanel() {
 }
 
 export function togglePanel() {
-  state.open = !state.open;
-  var root = document.documentElement;
-  if (state.open) {
-    if (!ui.panel) buildPanel();
-    ui.panel.style.display = "flex";
-    root.classList.add("wa-open");
-    syncNowIfVisible();
-    refreshPolling();
-  } else {
-    if (ui.panel) ui.panel.style.display = "none";
-    root.classList.remove("wa-open");
-    refreshPolling();
-  }
+  if (!ui.panel) buildPanel();
+  state.open = true;
+  document.documentElement.classList.add("wa-open");
+  if (ui.input) ui.input.focus();
+  syncNowIfVisible();
+  refreshPolling();
 }
 
 export function buildFab() {
-  var fab = el("button", {
-    class: "wa-fab",
-    "aria-label": "Open chat waiter",
-    html: "🍽️",
-    onclick: togglePanel,
-  });
-  var root = el("div", { class: "wa-root" }, [fab]);
-  document.body.appendChild(root);
+  // The chat is the page. There is no floating launcher or popup state.
+  buildPanel();
+  state.open = true;
+  document.documentElement.classList.add("wa-open");
 }

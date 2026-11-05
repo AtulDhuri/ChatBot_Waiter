@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
 from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy import text
 
 from app.config import settings
+
+logger = logging.getLogger("waiter.db")
 
 def _build_connect_args() -> dict:
     """asyncpg connect args tuned for Supabase.
@@ -126,6 +129,7 @@ _SCHEMA_STATEMENTS = [
     # phone, GSTIN, footer). Stored as a JSONB blob so staff can edit the shop's
     # legal/receipt details from the manager dashboard without a schema change
     # per field. Defaults to an empty object; the receipt simply omits any blank.
+    "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS receipt_profile JSONB NOT NULL DEFAULT '{}'::jsonb;",
     "ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'TRIAL';",
     "ALTER TABLE restaurants DROP CONSTRAINT IF EXISTS restaurants_subscription_status_check;",
     "ALTER TABLE restaurants ADD CONSTRAINT restaurants_subscription_status_check CHECK (subscription_status IN ('TRIAL','ACTIVE','EXPIRED','SUSPENDED'));",
@@ -225,7 +229,9 @@ _SCHEMA_STATEMENTS = [
         UNIQUE (restaurant_id, table_number)
     );
     """,
-    "CREATE INDEX IF NOT EXISTS qr_tokens_rid_idx ON qr_tokens(restaurant_id);",
+    "ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS token_type TEXT NOT NULL DEFAULT 'table';",
+    "ALTER TABLE qr_tokens ALTER COLUMN table_number DROP NOT NULL;",
+    "CREATE UNIQUE INDEX IF NOT EXISTS qr_tokens_takeaway_idx ON qr_tokens(restaurant_id) WHERE token_type = 'takeaway';",
     # Sessions tied to a table number.
     """
     CREATE TABLE IF NOT EXISTS sessions (
@@ -334,13 +340,18 @@ async def init_db() -> None:
     ``str.format`` would otherwise try to interpret as replacement fields.
     """
     async with engine.begin() as conn:
-        for stmt in _SCHEMA_STATEMENTS:
+        for index, stmt in enumerate(_SCHEMA_STATEMENTS, start=1):
             sql = (
                 stmt.format(dim=settings.embedding_dim)
                 if "{dim}" in stmt
                 else stmt
             )
-            await conn.execute(text(sql))
+            try:
+                await conn.execute(text(sql))
+            except Exception:
+                preview = " ".join(sql.split())[:240]
+                logger.exception("Schema bootstrap failed at statement %d: %s", index, preview)
+                raise
 
 
 async def dispose_db() -> None:

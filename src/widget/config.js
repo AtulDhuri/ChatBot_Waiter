@@ -54,6 +54,8 @@ function looksLikeToken(v) {
   return /[A-Z_]/.test(v) || v.length >= 20;
 }
 
+export var TAKEAWAY_MODE = urlParam("takeaway") === "1";
+
 export var IS_TOKEN = looksLikeToken(CONFIG.qrToken);
 
 // A legacy slug is used directly only when ?r= is not a token.

@@ -16,12 +16,12 @@
     return base.replace(/\/$/, '');
   }
 
-  function mintToken(slug, table) {
+  function mintToken(slug, table, mode) {
     return fetch('/qr/token', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurant: slug, table_number: table }),
+      body: JSON.stringify({ restaurant: slug, table_number: table || null, mode: mode || 'table' }),
     }).then(function (r) {
       if (!r.ok) {
         return r.json().then(
@@ -48,6 +48,10 @@
     }
   }
 
+  function takeawayUrl(token) {
+    return baseUrl() + '/?r=' + encodeURIComponent(token) + '&takeaway=1';
+  }
+
   // ── Single QR ──────────────────────────────────────────────────────────
 
   function renderQr(url, table) {
@@ -57,7 +61,7 @@
     var link  = document.getElementById('link');
     out.style.display = 'block';
     box.innerHTML     = '';
-    title.textContent = table ? 'Table ' + table : 'Table QR';
+    title.textContent = table === 'takeaway' ? 'Takeaway QR' : (table ? 'Table ' + table : 'Table QR');
     link.textContent  = url;
     buildQr(box, url);
   }
@@ -76,6 +80,20 @@
       })
       .catch(function (err) { alert(err.message); })
       .then(function () { go.disabled = false; go.textContent = old; });
+  });
+
+  document.getElementById('takeaway').addEventListener('click', function () {
+    var slug = document.getElementById('restaurant').value.trim() || 'demo';
+    var btn = document.getElementById('takeaway');
+    btn.disabled = true;
+    var old = btn.textContent;
+    btn.textContent = 'Generating…';
+    mintToken(slug, null, 'takeaway')
+      .then(function (data) {
+        renderQr(takeawayUrl(data.token), 'takeaway');
+      })
+    btn.disabled = false;
+    btn.textContent = old;
   });
 
   // ── Print-all tables ───────────────────────────────────────────────────

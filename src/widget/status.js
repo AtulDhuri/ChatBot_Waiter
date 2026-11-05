@@ -1,30 +1,31 @@
 // Customer order-status tracking. The customer sees ONLY their own session's
 // orders (server-enforced via the session token). Statuses flow
-// Placed -> Preparing -> Served.
+// Customer status steps: Placed -> Preparing -> Ready -> Served.
 //
 // Realtime strategy:
 //  - If the page loaded with @supabase/supabase-js present on the window AND
 //    the backend returns a realtime config from /session-realtime-token, we
 //    subscribe to postgres_changes on the `orders` table filtered to this
 //    session_id. Each push triggers pollStatusOnce() for a fresh server read.
-//  - If Supabase is not configured (404) or the channel fails, we fall back
-//    transparently to polling every STATUS_POLL_MS milliseconds.
+//  - If Supabase is not available or the subscription fails, we fall back
+//    to one request every 45 seconds using a non-overlapping timeout.
 //  - Only ONE subscription and ONE fallback timer are ever live at a time.
 
-import { money } from "./config.js";
+import { api, money } from "./config.js";
 import { state, ui } from "./state.js";
 import { addMessage, el } from "./dom.js";
 import { getJson } from "./api.js";
 import { endLocalSession } from "./cart.js";
 
-var STATUS_POLL_MS = 6000;   // fallback poll interval (ms) when realtime unavailable
-var STATUS_STEPS   = ["Placed", "Preparing", "Served"];
+var STATUS_FALLBACK_MS = 45000; // backup only; Realtime is primary
+var STATUS_STEPS   = ["Placed", "Preparing", "Ready", "Served"];
 
-// Realtime channel lifecycle state (module-level, not on `state` to avoid
-// leaking Supabase internals into session storage).
+// Realtime changes are filtered by the server-resolved internal session ID,
+// not the signed token. Orders store the internal session ID.
 var _rtClient  = null;  // Supabase client instance
 var _rtChannel = null;  // active channel
 var _rtActive  = false; // true when channel is SUBSCRIBED
+var _rtStarting = false;
 
 function statusClass(s) {
   return "wa-st-" + String(s || "").toLowerCase();
@@ -152,13 +153,17 @@ function _setupRealtime() {
   if (_rtChannel || !state.token || typeof window === "undefined") return;
   if (!window.supabase) return; // Supabase JS not loaded in this embed
 
-  fetch("/session-realtime-token?session_id=" + encodeURIComponent(state.token))
+  fetch(api("/auth/session-realtime-token?session_id=" + encodeURIComponent(state.token)))
     .then(function (r) {
       if (!r.ok) throw new Error("not configured");
       return r.json();
     })
     .then(function (cfg) {
-      if (!cfg.url || !cfg.anonKey || !cfg.restaurantId) return;
+      if (!cfg.url || !cfg.anonKey || !cfg.restaurantId || !cfg.sessionId) {
+        _rtStarting = false;
+        _ensureFallbackPolling();
+        return;
+      }
 
       _rtClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
         realtime: { heartbeatIntervalMs: 30000 },
@@ -180,7 +185,7 @@ function _setupRealtime() {
           event:  "UPDATE",  // only status/payment changes matter for the tracker
           schema: "public",
           table:  "orders",
-          filter: "session_id=eq." + state.token,
+          filter: "session_id=eq." + cfg.sessionId,
         },
         function () {
           // Re-fetch from server — the server maps raw DB status to the
@@ -197,7 +202,7 @@ function _setupRealtime() {
           event:  "INSERT",
           schema: "public",
           table:  "orders",
-          filter: "session_id=eq." + state.token,
+          filter: "session_id=eq." + cfg.sessionId,
         },
         function () { pollStatusOnce(); }
       );
@@ -205,18 +210,24 @@ function _setupRealtime() {
       _rtChannel.subscribe(function (status) {
         if (status === "SUBSCRIBED") {
           _rtActive = true;
-          // Stop fallback polling — realtime has taken over.
+          _rtStarting = false;
+          // Realtime is authoritative. Stop backup scheduling and make one
+          // initial read to render the current state.
           _stopFallbackPolling();
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          pollStatusOnce();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
           _rtActive = false;
+          _rtStarting = false;
           _rtChannel = null;
-          // Start fallback polling if not already running.
+          // Realtime failed; use the slow backup only.
           _ensureFallbackPolling();
         }
       });
     })
     .catch(function () {
-      // Supabase not configured — keep using polling.
+      _rtStarting = false;
+      // Supabase is unavailable or not configured. Use the slow backup.
+      _ensureFallbackPolling();
     });
 }
 
@@ -227,20 +238,28 @@ function _teardownRealtime() {
   }
   _rtClient  = null;
   _rtActive  = false;
+  _rtStarting = false;
 }
 
-// ── Fallback polling timer ────────────────────────────────────────────────
+// ── Slow fallback ─────────────────────────────────────────────────────────
+// Realtime is primary. A recursive timeout is used for the backup so
+// failed/slow requests cannot overlap and only one backup request is pending.
+function _scheduleFallback() {
+  if (!state.token || _rtActive || state.statusTimer) return;
+  state.statusTimer = setTimeout(function () {
+    state.statusTimer = null;
+    pollStatusOnce().then(_scheduleFallback);
+  }, STATUS_FALLBACK_MS);
+}
 
 function _ensureFallbackPolling() {
-  if (state.statusTimer) return;  // already running
-  if (!state.token)      return;
-  pollStatusOnce();
-  state.statusTimer = setInterval(pollStatusOnce, STATUS_POLL_MS);
+  if (!state.token || _rtActive || state.statusTimer) return;
+  pollStatusOnce().then(_scheduleFallback);
 }
 
 function _stopFallbackPolling() {
   if (state.statusTimer) {
-    clearInterval(state.statusTimer);
+    clearTimeout(state.statusTimer);
     state.statusTimer = null;
   }
 }
@@ -248,11 +267,15 @@ function _stopFallbackPolling() {
 // ── Public API ────────────────────────────────────────────────────────────
 
 export function startStatusPolling() {
-  if (!state.token) return;
-  // Attempt realtime first; fallback polling starts only if it fails.
+  if (!state.token || _rtActive || _rtStarting || _rtChannel) return;
+  _rtStarting = true;
+  if (typeof window === "undefined" || !window.supabase) {
+    _rtStarting = false;
+    _ensureFallbackPolling();
+    return;
+  }
+  // Realtime is primary. The backup starts only after connection failure.
   _setupRealtime();
-  // If realtime is already active (reconnect scenario), don't add a timer.
-  if (!_rtActive) _ensureFallbackPolling();
 }
 
 export function stopStatusPolling() {
@@ -262,11 +285,8 @@ export function stopStatusPolling() {
 
 export function resumeStatusPollingIfNeeded() {
   if (!state.token) return;
-  // If realtime is alive, a one-shot refresh is enough to fill any gap.
-  if (_rtActive) {
-    pollStatusOnce();
-    return;
-  }
+  // Realtime pushes changes; focus/visibility must not trigger a read.
+  if (_rtActive || _rtStarting || _rtChannel) return;
   if (state.statusTimer) return;
   startStatusPolling();
 }

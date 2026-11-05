@@ -2,8 +2,8 @@
 // IIFE at static/widget.js. Boot wiring and the public window.ChatbotWaiter API
 // live here, matching the original single-file widget exactly.
 
-import { CONFIG, IS_TOKEN, LEGACY_SLUG } from "./config.js";
-import { state, loadSession } from "./state.js";
+import { CONFIG, IS_TOKEN, LEGACY_SLUG, TAKEAWAY_MODE } from "./config.js";
+import { state, loadSession, resetLocalSession } from "./state.js";
 import { injectStyles } from "./styles.js";
 import { resolveQrToken, prefetchRestaurantName } from "./api.js";
 import {
@@ -38,9 +38,13 @@ function boot() {
   }
   injectStyles();
   loadSession();
+  // A takeaway QR is a shared entry point, not a resumable table session.
+  // Always discard any previous local session before asking for the new
+  // customer's name so two scans on the same device cannot share a session.
+  if (TAKEAWAY_MODE) resetLocalSession();
   buildFab();
 
-  if (IS_TOKEN) {
+  if (IS_TOKEN && !TAKEAWAY_MODE) {
     resolveQrToken();
   } else {
     prefetchRestaurantName();

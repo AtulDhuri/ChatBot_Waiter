@@ -42,6 +42,23 @@ export function saveSession() {
   } catch (e) {}
 }
 
+export function resetLocalSession() {
+  state.token = null;
+  state.tableNumber = null;
+  state.orderType = null;
+  state.customerName = null;
+  state.zone = null;
+  state.paymentMode = "prepaid";
+  state.cart = [];
+  state.pendingOrder = null;
+  state.statusNode = null;
+  state.billNode = null;
+  state.billPayBtn = null;
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+}
+
 export function loadSession() {
   try {
     var raw = sessionStorage.getItem(SESSION_KEY);

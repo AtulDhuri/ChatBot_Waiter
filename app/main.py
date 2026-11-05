@@ -14,6 +14,7 @@ from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.db import repository as repo
 from app.db.database import dispose_db, init_db
 from app.routes.deps import get_db
 from app.routes import (
