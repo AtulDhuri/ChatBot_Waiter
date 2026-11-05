@@ -35,7 +35,7 @@ import {
   tryOrderIntent,
   addParsedItems,
 } from "./nlorder.js";
-import { renderChat, renderQuickChips } from "./render.js";
+import { renderChat, renderQuickChips, renderContextDock } from "./render.js";
 
 export function placeOrder(orderType) {
   if (!state.cart.length) {
@@ -76,6 +76,7 @@ export function placeOrder(orderType) {
         ),
       ]);
       addMessage("✅ Order placed!", "bot");
+      renderContextDock("ordered");
       addMessage(null, "bot", card);
       pollStatusOnce(true).then(function () {
         startStatusPolling();
@@ -406,6 +407,7 @@ export function showCart() {
   );
   addMessage(null, "bot", card);
   setActiveCart({ card: card, rerender: rerender });
+  renderContextDock("review");
 }
 
 // Lazily load a QR library (used only when the guest wants to pay).
@@ -618,6 +620,7 @@ export function showBill() {
       .then(function (bill) {
         var node = el("div", { html: billHtml(bill) });
         addMessage("Here's your current bill for table " + bill.table_number + ":", "bot");
+        renderContextDock("bill");
         addMessage(null, "bot", node);
         if (bill.payment_status !== "paid") {
           var postpaidPayBtn = el(
@@ -656,6 +659,7 @@ export function showBill() {
       }
       var node = el("div", { html: billHtml(bill) });
       addMessage("Here's your bill for table " + bill.table_number + ":", "bot");
+      renderContextDock("bill");
       addMessage(null, "bot", node);
       state.billNode = node;
 

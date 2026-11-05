@@ -4,13 +4,14 @@
 import { CONFIG, IS_TOKEN, TAKEAWAY_MODE } from "./config.js";
 import { state, ui } from "./state.js";
 import { addMessage, el } from "./dom.js";
-import { startSession, resolveQrToken, askQuestion } from "./api.js";
-import { showMenu, showCart, showOrderOverview, showBill, handleSend } from "./flows.js";
+import { startSession, resolveQrToken } from "./api.js";
+import { showMenu, showCart, showOrderOverview, showBill, showPayment, handleSend } from "./flows.js";
+import { showOrders } from "./status.js";
 import {
   syncNowIfVisible,
   refreshPolling,
 } from "./availability.js";
-import { updateCartBadge } from "./cart.js";
+import { updateCartBadge, cartCount, cartTotal } from "./cart.js";
 
 export function renderTablePrompt() {
   ui.body.innerHTML = "";
@@ -109,20 +110,32 @@ export function askIdentifier(orderType) {
   }, 50);
 }
 
-export function renderQuickChips() {
-  function ask(prompt) {
-    return function () {
-      addMessage(prompt, "user");
-      var t = addMessage("…", "bot");
-      askQuestion(prompt)
-        .then(function (r) { t.querySelector(".wa-bubble").textContent = r.answer; })
-        .catch(function () { t.querySelector(".wa-bubble").textContent = "Sorry, try again."; });
-    };
+export function renderContextDock(mode) {
+  if (!ui.dock) return;
+  ui.dock.innerHTML = "";
+  var buttons = [];
+  function chip(label, action) {
+    return el("button", { class: "wa-chip", onclick: action }, [label]);
   }
+  if (mode === "ordered") {
+    buttons = [chip("📦 Track Order", showOrders), chip("💳 Get Bill", showBill)];
+  } else if (mode === "bill") {
+    buttons = [chip("💳 Pay Now", showPayment), chip("⭐ Feedback", function () {
+      addMessage("What could we improve about your experience?", "bot");
+    })];
+  } else if (mode === "review") {
+    buttons = [chip("🍽 Menu", showMenu), chip("✅ Place Order", showCart)];
+  } else if (state.cart.length) {
+    buttons = [chip("➕ Add More", showMenu), chip("🛒 Cart (" + cartCount() + ")", showCart)];
+  } else {
+    buttons = [chip("🍽 Menu", showMenu)];
+  }
+  buttons.forEach(function (button) { ui.dock.appendChild(button); });
+}
+
+export function renderQuickChips() {
   var chips = el("div", { class: "wa-quick" }, [
     el("button", { class: "wa-chip", onclick: showMenu }, ["Show Menu"]),
-    el("button", { class: "wa-chip", onclick: ask("What are the popular items?") }, ["Popular Items"]),
-    el("button", { class: "wa-chip", onclick: ask("Show vegetarian dishes") }, ["Veg Dishes"]),
   ]);
   ui.body.appendChild(chips);
   ui.body.scrollTop = ui.body.scrollHeight;
@@ -141,6 +154,12 @@ export function renderChat() {
   input.addEventListener("keydown", function (e) {
     if (e.key === "Enter") handleSend();
   });
+  ui.dock = el("div", { class: "wa-dock", "aria-label": "Suggested actions" });
+  ui.dockUpdate = function () {
+    renderContextDock(state.cart.length ? "cart" : "initial");
+  };
+  ui.footer.appendChild(ui.dock);
+  renderContextDock(state.cart.length ? "cart" : "initial");
   ui.footer.appendChild(el("div", { class: "wa-row" }, [input, send]));
 }
 
@@ -154,7 +173,7 @@ function _headerSub() {
 }
 
 export function buildPanel() {
-  ui.badge = el("span", { class: "wa-cart-badge" }, ["0"]);
+  ui.badge = el("button", { class: "wa-cart-badge", onclick: showCart, "aria-label": "Open cart" }, ["🛒 0 Items • ₹0"]);
   ui.badge.style.display = "none";
 
   ui.titleEl = el("div", { class: "wa-title" }, [

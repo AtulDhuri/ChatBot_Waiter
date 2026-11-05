@@ -101,6 +101,35 @@
     document.getElementById('modalBg').classList.remove('open');
   }
 
+  function confirmSettle() {
+    var bg = document.getElementById('settleModalBg');
+    var cancel = document.getElementById('settleCancel');
+    var confirmBtn = document.getElementById('settleConfirm');
+    bg.classList.add('open');
+    confirmBtn.focus();
+    return new Promise(function (resolve) {
+      var settled = false;
+      function finish(value) {
+        if (settled) return;
+        settled = true;
+        bg.classList.remove('open');
+        cancel.removeEventListener('click', onCancel);
+        confirmBtn.removeEventListener('click', onConfirm);
+        bg.removeEventListener('click', onBackdrop);
+        document.removeEventListener('keydown', onKeydown);
+        resolve(value);
+      }
+      function onCancel() { finish(false); }
+      function onConfirm() { finish(true); }
+      function onBackdrop(e) { if (e.target === bg) finish(false); }
+      function onKeydown(e) { if (e.key === 'Escape') finish(false); }
+      cancel.addEventListener('click', onCancel);
+      confirmBtn.addEventListener('click', onConfirm);
+      bg.addEventListener('click', onBackdrop);
+      document.addEventListener('keydown', onKeydown);
+    });
+  }
+
   // ── Render helpers ────────────────────────────────────────────────────────
   function itemsBlock(items, cur) {
     if (!items || !items.length)
@@ -361,19 +390,21 @@
     Array.prototype.forEach.call(cardsEl.querySelectorAll('button.settle-session'), function (btn) {
       btn.addEventListener('click', function () {
         var sessionId = btn.getAttribute('data-session-id');
-        if (!confirm('Mark all orders in this table bill as PAID?')) return;
-        btn.disabled = true;
-        sfetch('/manager/session/settle', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ restaurant: restaurant(), session_id: sessionId, payment_method: 'cash' }),
-        })
-          .then(function (r) {
-            if (!r.ok) throw new Error('Could not settle table bill');
-            return r.json();
+        confirmSettle().then(function (confirmed) {
+          if (!confirmed) return;
+          btn.disabled = true;
+          sfetch('/manager/session/settle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ restaurant: restaurant(), session_id: sessionId, payment_method: 'cash' }),
           })
-          .then(function () { load(); })
-          .catch(function (e) { btn.disabled = false; errEl.textContent = e.message; });
+            .then(function (r) {
+              if (!r.ok) throw new Error('Could not settle table bill');
+              return r.json();
+            })
+            .then(function () { load(); })
+            .catch(function (e) { btn.disabled = false; errEl.textContent = e.message; });
+        });
       });
     });
 

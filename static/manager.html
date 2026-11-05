@@ -66,6 +66,17 @@
       </div>
     </div>
 
+    <div id="settleModalBg" class="modal-bg" role="presentation">
+      <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="settleModalTitle">
+        <h2 id="settleModalTitle">Mark bill as paid?</h2>
+        <p class="sub">Mark all orders in this table bill as paid?</p>
+        <div class="actions">
+          <button id="settleCancel" class="ghost" type="button">Cancel</button>
+          <button id="settleConfirm" class="primary" type="button">Mark as paid</button>
+        </div>
+      </div>
+    </div>
+
     <div id="receipt"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
