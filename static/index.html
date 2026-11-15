@@ -3,87 +3,61 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DineOS — Demo Bistro</title>
-    
+    <meta name="description" content="DineOS helps restaurants run ordering, kitchen operations, payments, and guest service in one place." />
+    <title>DineOS — Restaurant operations, made simple</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/css/index.css" />
-</head>
+  </head>
   <body>
-    <section class="hero">
-      <h1>🍽️ Demo Bistro · DineOS</h1>
-      <p>
-        Scan, chat, and order. Our AI waiter answers menu questions, takes your
-        order, and prints your bill — right from your phone.
-      </p>
-    </section>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="DineOS home"><span class="brand-mark">D</span><span>DineOS</span></a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="#workflow">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#restaurants">For restaurants</a>
+      </nav>
+      <a class="nav-cta" href="/login">Open dashboard <span>↗</span></a>
+    </header>
 
-    <div class="wrap">
-      <div class="card">
-        <h2>Try it now</h2>
-        <p class="muted">
-          Tap the chat button in the bottom-right corner, enter a table number
-          (any number works for the demo), then ask things like
-          <em>"What vegetarian dishes do you have?"</em> or type
-          <code>menu</code> / <code>bill</code>.
-        </p>
-        <button class="cta" onclick="ChatbotWaiter.open()">
-          Start chatting →
-        </button>
-      </div>
-
-      <div class="card">
-        <h2>How it works</h2>
-        <div class="steps">
-          <div class="step">
-            <div class="n">1</div>
-            <strong>Enter table #</strong>
-            <p class="muted">Your session is tied to your table.</p>
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> The digital operating system for restaurants</p>
+          <h1>Better service.<br /><em>Less waiting.</em></h1>
+          <p class="hero-lede">Give every guest a faster way to discover your menu, place an order, and stay informed, while your team keeps the whole operation moving.</p>
+          <div class="hero-actions">
+            <button class="button button-primary" onclick="ChatbotWaiter.open()">Try the guest experience <span>→</span></button>
+            <a class="text-link" href="#workflow">See how it works <span>↓</span></a>
           </div>
-          <div class="step">
-            <div class="n">2</div>
-            <strong>Ask &amp; order</strong>
-            <p class="muted">AI answers from the real menu and builds your cart.</p>
-          </div>
-          <div class="step">
-            <div class="n">3</div>
-            <strong>Get the bill</strong>
-            <p class="muted">Totals and tax calculated instantly.</p>
-          </div>
+          <div class="trust-row"><span>Built for busy restaurants</span><i></i><span>Simple for every team</span></div>
         </div>
-      </div>
+        <div class="product-stage" aria-label="DineOS dashboard preview">
+          <div class="glow"></div>
+          <div class="browser-card">
+            <div class="browser-bar"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span><span class="browser-url">app.dineos.com / overview</span></div>
+            <div class="dashboard-content">
+              <div class="dash-heading"><div><small>GOOD MORNING, DEMO BISTRO</small><h3>Your operation at a glance</h3></div><span class="user-chip">DB</span></div>
+              <div class="stat-grid"><div><small>GUEST ORDERS</small><strong>128</strong><b class="positive">+18.4%</b></div><div><small>IN THE FLOW</small><strong>24</strong><b class="neutral">orders today</b></div><div><small>TABLES ACTIVE</small><strong>18</strong><b class="positive">All on track</b></div></div>
+              <div class="dash-grid"><div class="chart-card"><div class="card-label">Live order volume <span>Today</span></div><div class="bars"><i style="height:28%"></i><i style="height:44%"></i><i style="height:35%"></i><i style="height:62%"></i><i style="height:52%"></i><i style="height:74%"></i><i style="height:65%"></i><i style="height:88%"></i><i style="height:78%"></i><i style="height:96%"></i></div><div class="axis"><span>10 AM</span><span>2 PM</span><span>6 PM</span></div></div><div class="status-card"><div class="card-label">Kitchen status <span>Live</span></div><p><b class="status-dot orange"></b> Preparing <strong>08</strong></p><p><b class="status-dot blue"></b> Ready to serve <strong>05</strong></p><p><b class="status-dot green-dot"></b> Served <strong>11</strong></p></div></div>
+            </div>
+          </div>
+          <div class="floating-note"><span>✦</span><div><strong>Order #1048 is ready</strong><small>Table 12 · 2 minutes ago</small></div></div>
+        </div>
+      </section>
 
-      <div class="card">
-        <h2>For restaurants</h2>
-        <p class="muted">
-          Plug-and-play: upload your PDF menu on the
-          <a href="/admin.html">admin page</a>, then paste one line on your
-          site. The widget talks to whatever host it's loaded from, so there's
-          nothing else to configure:
-        </p>
-        <pre style="overflow:auto"><code>&lt;script src="https://your-host/widget.js"
-        data-restaurant="demo"&gt;&lt;/script&gt;</code></pre>
-        <p class="muted" style="margin-top:16px">
-          <a href="/admin.html">📤 Upload a menu (per restaurant)</a>
-          &nbsp;·&nbsp;
-          <a href="/qr.html">🔳 Generate table QR codes</a>
-        </p>
-      </div>
+      <section class="workflow section" id="workflow">
+        <div class="section-intro"><p class="eyebrow">One connected operating loop</p><h2>Every handoff is clear,<br /><em>from scan to settlement.</em></h2><p>DineOS connects the guest experience, kitchen flow, and manager view in one calm workspace. That means fewer mistakes and more time for your team to focus on hospitality.</p></div>
+        <div class="workflow-grid"><article><span class="step-number">01</span><h3>Guest ordering</h3><p>Guests browse, ask questions, and order from their table without waiting.</p></article><article><span class="step-number">02</span><h3>Kitchen clarity</h3><p>Your team sees what needs attention and moves each order forward.</p></article><article><span class="step-number">03</span><h3>Service that flows</h3><p>Everyone knows what is ready, served, paid, and still in progress.</p></article><article><span class="step-number">04</span><h3>Business visibility</h3><p>Review sales, menu performance, and daily operations in one place.</p></article></div>
+      </section>
 
-      <div class="card">
-        <h2>Multi-tenant: test different restaurants</h2>
-        <p class="muted">
-          Each restaurant is a <strong>slug</strong>. Upload a menu under a slug
-          on the <a href="/admin.html">admin page</a>, then open the ordering
-          page scoped to that slug — the QR codes do this automatically:
-        </p>
-        <ul class="muted">
-          <li><a href="/?r=demo">/?r=demo</a> — the demo restaurant</li>
-          <li><a href="/?r=seaside-grill">/?r=seaside-grill</a> — a second tenant</li>
-          <li><a href="/?r=demo&amp;t=12">/?r=demo&amp;t=12</a> — demo, table 12 pre-filled</li>
-        </ul>
-      </div>
-    </div>
+      <section class="feature-section section" id="features"><div class="feature-copy"><p class="eyebrow">Made for the whole team</p><h2>One system for<br /><em>every shift.</em></h2><p>From the first guest question to the final bill, DineOS keeps the important details visible and the work moving in the right direction.</p><a class="text-link" href="/login">Explore the dashboard <span>→</span></a></div><div class="feature-list"><div class="feature-item"><span>01</span><div><h3>Guest experience</h3><p>A helpful digital waiter that guides guests from menu to order.</p></div></div><div class="feature-item"><span>02</span><div><h3>Kitchen workflow</h3><p>A focused view of incoming, preparing, ready, and served orders.</p></div></div><div class="feature-item"><span>03</span><div><h3>Manager control</h3><p>Menus, tables, payments, reports, and staff tools in one workspace.</p></div></div></div></section>
 
-    <!-- The embeddable widget. data-api="" uses same origin. -->
+      <section class="restaurant-callout section" id="restaurants"><div><p class="eyebrow">Ready when you are</p><h2>Make your restaurant<br /><em>easier to run.</em></h2><p>Start with your menu, invite your team, and give guests a better way to order.</p></div><a class="button button-dark" href="/login">Get started <span>→</span></a></section>
+    </main>
+    <footer><a class="brand" href="/"><span class="brand-mark">D</span><span>DineOS</span></a><span>Restaurant operations, made simple.</span></footer>
+
     <script src="/config.js"></script>
     <script src="/widget.js?v=3" data-api="" data-restaurant="demo"></script>
   </body>
