@@ -3,7 +3,7 @@
 
 import { CONFIG, IS_TOKEN, TAKEAWAY_MODE } from "./config.js";
 import { state, ui } from "./state.js";
-import { addMessage, el } from "./dom.js";
+import { addMessage, el, _guard } from "./dom.js";
 import { startSession, resolveQrToken } from "./api.js";
 import { showMenu, showCart, showOrderOverview, showBill, showPayment, handleSend } from "./flows.js";
 import { showOrders } from "./status.js";
@@ -100,9 +100,10 @@ export function askIdentifier(orderType) {
         addMessage("Couldn't start your session. Please try again.", "bot");
       });
   }
-  go.addEventListener("click", submit);
+  var guardedSubmit = _guard(go, submit);
+  go.addEventListener("click", guardedSubmit);
   input.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") submit();
+    if (e.key === "Enter") guardedSubmit(e);
   });
   ui.footer.appendChild(el("div", { class: "wa-row" }, [back, input, go]));
   setTimeout(function () {
@@ -114,8 +115,10 @@ export function renderContextDock(mode) {
   if (!ui.dock) return;
   ui.dock.innerHTML = "";
   var buttons = [];
-  function chip(label, action) {
-    return el("button", { class: "wa-chip", onclick: action }, [label]);
+  function chip(label, action, orderSubmit) {
+    var attrs = { class: "wa-chip", onclick: action };
+    if (orderSubmit) attrs["data-order-submit"] = "true";
+    return el("button", attrs, [label]);
   }
   if (mode === "ordered") {
     buttons = [chip("📦 Track Order", showOrders), chip("💳 Get Bill", showBill)];
@@ -124,7 +127,7 @@ export function renderContextDock(mode) {
       addMessage("What could we improve about your experience?", "bot");
     })];
   } else if (mode === "review") {
-    buttons = [chip("🍽 Menu", showMenu), chip("✅ Place Order", showCart)];
+    buttons = [chip("🍽 Menu", showMenu), chip("✅ Place Order", showCart, true)];
   } else if (state.cart.length) {
     buttons = [chip("➕ Add More", showMenu), chip("🛒 Cart (" + cartCount() + ")", showCart)];
   } else {

@@ -89,7 +89,14 @@ button.settle-session { background: #6366f1; color: #fff; border: none; }
 .items .line { font-size: 13px; display: flex; justify-content: space-between; gap: 8px; }
 .items .line .nm { color: #f8fafc; }
 .items .line .amt { color: #94a3b8; white-space: nowrap; }
+.items .line.cancelled { opacity: 0.6; text-decoration: line-through; }
 .items .note { color: #fcd34d; font-style: italic; font-size: 12px; padding-left: 2px; }
+.item-st-pending   { background: rgba(128,128,128,.25); color: #b9bbc1; }
+.item-st-accepted  { background: rgba(70,130,180,.3); color: #9fd; }
+.item-st-preparing { background: rgba(224,165,38,.3); color: #fcd34d; }
+.item-st-ready     { background: rgba(46,158,91,.3); color: #86efac; }
+.item-st-served    { background: rgba(255,255,255,.12); color: #94a3b8; }
+.item-st-cancelled { background: rgba(107,34,48,.2); color: #64748b; text-decoration: line-through; }
 .totals { border-top: 1px dashed rgba(255,255,255,.10); padding-top: 10px; font-size: 13px; }
 .totals .row { display: flex; justify-content: space-between; padding: 1px 0; color: #94a3b8; }
 .totals .grand { font-weight: 800; font-size: 15px; color: #f8fafc; margin-top: 4px; }

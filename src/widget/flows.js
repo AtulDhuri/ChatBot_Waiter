@@ -3,7 +3,7 @@
 
 import { CONFIG, money, api } from "./config.js";
 import { state, ui, saveSession } from "./state.js";
-import { addMessage, el } from "./dom.js";
+import { addMessage, el, setOrderSubmitBusy } from "./dom.js";
 import {
   fetchPlaceOrder,
   fetchPay,
@@ -42,6 +42,9 @@ export function placeOrder(orderType) {
     addMessage("Your order is empty.", "bot");
     return;
   }
+  if (state.orderSubmitting) return Promise.resolve();
+  state.orderSubmitting = true;
+  setOrderSubmitBusy(true);
   return fetchPlaceOrder(orderType)
     .then(function (o) {
       state.billNode = null;
@@ -84,6 +87,10 @@ export function placeOrder(orderType) {
     })
     .catch(function (e) {
       addMessage("Couldn't place the order: " + e.message, "bot");
+    })
+    .then(function () {
+      state.orderSubmitting = false;
+      setOrderSubmitBusy(false);
     });
 }
 
@@ -162,7 +169,7 @@ export function menuItemRow(item) {
 
 export function showMenu() {
   addMessage("Here's our menu:", "bot");
-  fetchMenu()
+  return fetchMenu()
     .then(function (data) {
       if (!data.items || !data.items.length) {
         addMessage("The menu isn't loaded yet. Please check back soon.", "bot");
@@ -372,6 +379,7 @@ export function showCart() {
           "button",
           {
             class: "wa-btn",
+            "data-order-submit": "true",
             onclick: function () {
               if (state.paymentMode === "postpaid") {
                 return chooseAndPlaceOrder();
@@ -435,7 +443,7 @@ export function showPayment() {
     addMessage("Your order is empty, nothing to pay for yet.", "bot");
     return;
   }
-  (isPostpaid ? fetchPostpaidPay() : fetchPay())
+  return (isPostpaid ? fetchPostpaidPay() : fetchPay())
     .then(function (pay) {
       if (reconcileDropped(pay.dropped)) {
         if (!state.cart.length) {
@@ -446,8 +454,7 @@ export function showPayment() {
           );
           return;
         }
-        showPayment();
-        return;
+        return showPayment();
       }
       if (!pay.configured || !pay.upi_uri) {
         var fb = el("div", { class: "wa-pay-card" }, [
@@ -464,6 +471,7 @@ export function showPayment() {
               "button",
               {
                 class: "wa-btn",
+                "data-order-submit": "true",
                 style: "margin-top:10px;width:100%",
                 onclick: function () {
                   return chooseAndPlaceOrder();
@@ -542,6 +550,7 @@ export function showPayment() {
             "button",
             {
               class: "wa-btn",
+              "data-order-submit": "true",
               style: "margin-top:12px;width:100%",
               onclick: function () {
                 return chooseAndPlaceOrder();
@@ -629,7 +638,7 @@ export function showBill() {
               class: "wa-btn",
               style: "margin-top:8px;width:100%",
               onclick: function () {
-                showPayment();
+                return showPayment();
               },
             },
             ["💳 Pay bill " + money(bill.total)]
@@ -651,7 +660,7 @@ export function showBill() {
     addMessage("Your cart is empty. Add some items first.", "bot");
     return;
   }
-  fetchBill()
+  return fetchBill()
     .then(function (bill) {
       if (reconcileDropped(bill.dropped) && !bill.line_items.length) {
         addMessage("Your cart is now empty. Please add some items.", "bot");
@@ -788,7 +797,7 @@ export function handleSend() {
   if (/\b(pay|upi|scan to pay)\b/.test(lower)) return showPayment();
   if (/\b(bill|check|total)\b/.test(lower)) return showBill();
 
-  ensureMenu().then(function (menu) {
+  return ensureMenu().then(function (menu) {
     if (tryOrderIntent(text, menu)) {
       ui.body.scrollTop = ui.body.scrollHeight;
       return;
@@ -796,7 +805,7 @@ export function handleSend() {
 
     if (looksOrderish(text)) {
       var thinking = addMessage("…", "bot");
-      parseOrderServer(text)
+      return parseOrderServer(text)
         .then(function (res) {
           if (res && res.understood && res.items && res.items.length) {
             addParsedItems(res.items);
@@ -821,7 +830,7 @@ export function handleSend() {
           });
         })
         .catch(function () {
-          askQuestion(text)
+          return askQuestion(text)
             .then(function (ans) {
               thinking.querySelector(".wa-bubble").textContent = ans.answer;
             })
@@ -834,7 +843,7 @@ export function handleSend() {
     }
 
     var typing = addMessage("…", "bot");
-    askQuestion(text)
+    return askQuestion(text)
       .then(function (res) {
         typing.querySelector(".wa-bubble").textContent = res.answer;
         var d = matchDish(text, state.menu);

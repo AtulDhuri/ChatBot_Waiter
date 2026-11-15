@@ -270,6 +270,7 @@ class MyOrder(BaseModel):
     total: float
     currency: str
     created_at: Any
+    order_items: Optional[List[Dict[str, Any]]] = None
 
 
 class MyOrdersResponse(BaseModel):
@@ -326,6 +327,121 @@ class OrderStatusUpdate(BaseModel):
     payment_status: Optional[str] = Field(
         default=None, pattern="^(paid_unverified|verified|unpaid|refunded)$"
     )
+
+
+# ---- Order item lifecycle --------------------------------------------------
+
+class OrderItem(BaseModel):
+    """A single menu item inside an order, with its own lifecycle status."""
+    id: int
+    order_id: int
+    restaurant_id: int
+    menu_item_id: Optional[int] = None
+    name: str
+    price: float = 0.0
+    quantity: int = 1
+    line_total: float = 0.0
+    instructions: str = ""
+    status: str  # pending | accepted | preparing | ready | served | cancelled
+    previous_status: Optional[str] = None
+    cancelled_at: Optional[Any] = None
+    cancelled_by: Optional[int] = None
+    cancel_reason: Optional[str] = None
+    created_at: Any
+    updated_at: Any
+
+
+class ItemStatusUpdate(BaseModel):
+    """Staff/chef request to move a single item to a new status."""
+    status: str = Field(
+        ..., pattern="^(pending|accepted|preparing|ready|served|cancelled)$"
+    )
+    reason: Optional[str] = Field(default=None, max_length=200)
+
+
+class ItemCancelRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=200)
+
+
+class ItemQuantityRequest(BaseModel):
+    quantity: int = Field(..., ge=0)
+
+
+class ItemStatusHistory(BaseModel):
+    id: int
+    order_item_id: int
+    order_id: int
+    restaurant_id: int
+    from_status: Optional[str] = None
+    to_status: str
+    changed_by: Optional[int] = None
+    changed_by_role: Optional[str] = None
+    reason: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Any
+
+
+class ItemCancellation(BaseModel):
+    id: int
+    order_item_id: int
+    order_id: int
+    restaurant_id: int
+    cancelled_by: Optional[int] = None
+    cancelled_by_role: Optional[str] = None
+    reason: Optional[str] = None
+    refund_required: bool = False
+    refund_amount: float = 0.0
+    refund_status: str = "pending"
+    refund_policy: Optional[str] = None
+    previous_quantity: int = 1
+    new_quantity: int = 0
+    created_at: Any
+
+
+class OrderWithItems(Order):
+    """Order enriched with per-item rows and derived overall status."""
+    order_items: List[OrderItem] = []
+
+
+class RefundPolicy(BaseModel):
+    mode: str = Field(default="proportional", pattern="^(proportional|full_per_item|none)$")
+    prepaid_full_refund: bool = True
+    postpaid_no_charge: bool = True
+
+
+class RefundPolicyUpdate(BaseModel):
+    restaurant: str = Field(default="demo", max_length=64)
+    mode: str = Field(..., pattern="^(proportional|full_per_item|none)$")
+    prepaid_full_refund: bool = True
+    postpaid_no_charge: bool = True
+
+
+# Extend OrderCreate to carry optional menu_item_id references per line.
+class OrderCreate(BaseModel):
+    session_id: str
+    cart: Optional[List[CartItem]] = None
+    order_type: str = Field(default="dine_in", pattern="^(dine_in|takeaway)$")
+    payment_status: str = Field(
+        default="paid_unverified",
+        pattern="^(paid_unverified|verified|unpaid)$",
+    )
+
+
+# Extend OrderPlaced to include item statuses for the kitchen.
+class OrderPlaced(BaseModel):
+    id: int
+    order_no: str
+    order_type: str = "dine_in"
+    customer_name: Optional[str] = None
+    status: str
+    payment_status: str
+    total: float
+    currency: str
+    items: List[Dict[str, Any]] = []
+    order_items: List[Dict[str, Any]] = []
+
+
+SessionInfo.model_rebuild()
 
 
 # ---- Manager dashboard ---------------------------------------------------

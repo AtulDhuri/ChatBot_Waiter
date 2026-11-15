@@ -1,12 +1,7 @@
-// kitchen.js — Kitchen Display System
+// kitchen.js — Kitchen Display System (item-level lifecycle)
 (function () {
   'use strict';
 
-  // ── Constants ─────────────────────────────────────────────────────────────
-  // POLL_MS is only used for:
-  //   (a) the live-indicator blink (purely cosmetic), and
-  //   (b) the one-time recovery poll when Supabase is not configured.
-  // It no longer drives a data-refresh loop.
   var TIMER_MS      = 60000; // elapsed-time badge refresh interval (cosmetic)
   var grid          = document.getElementById('grid');
   var emptyEl       = document.getElementById('empty');
@@ -14,12 +9,41 @@
   var liveEl        = document.getElementById('live');
   var currentRole   = '';
   var realtimeActive = false;
-  var NEXT       = { 'new': 'preparing', preparing: 'ready', ready: 'served' };
-  var NEXT_LABEL = { 'new': 'Start cooking', preparing: 'Mark as ready', ready: 'Mark served' };
+
+  // Item-level lifecycle: pending -> accepted -> preparing -> ready -> served.
+  var ITEM_NEXT = {
+    pending:   'accepted',
+    accepted:  'preparing',
+    preparing: 'ready',
+    ready:     'served',
+  };
+  var ITEM_NEXT_LABEL = {
+    pending:   'Accept',
+    accepted:  'Start cooking',
+    preparing: 'Mark ready',
+    ready:     'Mark served',
+  };
+  var ITEM_STATUS_LABEL = {
+    pending:   'Pending',
+    accepted:  'Accepted',
+    preparing: 'Preparing',
+    ready:     'Ready',
+    served:    'Served',
+    cancelled: 'Cancelled',
+  };
+  var ITEM_TERMINAL = { served: true, cancelled: true };
+  var ITEM_CANCELLABLE = { pending: true, accepted: true };
+  var ORDER_TERMINAL = { served: true, cancelled: true };
+
+  // Older orders may have only the legacy `items` array. Prefer lifecycle
+  // rows when present, but fall back when the API returns an empty array.
+  function orderItems(order) {
+    return order.order_items && order.order_items.length
+      ? order.order_items
+      : (order.items || []);
+  }
 
   // ── Elapsed-time helpers ──────────────────────────────────────────────────
-  var TERMINAL_STATUSES = { served: true, cancelled: true };
-
   function elapsedMinutes(isoTimestamp) {
     var t = new Date(isoTimestamp);
     if (isNaN(t.getTime())) return 0;
@@ -32,12 +56,11 @@
     return             { cls: 'green',  label: mins + 'm', urgency: 'On Time'  };
   }
 
-  // Rebuild only the elapsed-time badges — no network call.
   function tickElapsedBadges() {
     var badges = grid.querySelectorAll('[data-placed-at]');
     Array.prototype.forEach.call(badges, function (el) {
       var status = el.getAttribute('data-order-status');
-      if (TERMINAL_STATUSES[status]) return;
+      if (ORDER_TERMINAL[status]) return;
       var mins = elapsedMinutes(el.getAttribute('data-placed-at'));
       var info = elapsedInfo(mins);
       el.className = 'elapsed-badge elapsed-' + info.cls;
@@ -51,13 +74,46 @@
     return document.getElementById('restaurant').value.trim() || 'demo';
   }
 
-  function patch(id, body) {
-    return sfetch('/order/' + id, {
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ── API helpers ───────────────────────────────────────────────────────────
+  function patch(url, body) {
+    return sfetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body || {}),
     }).then(function (r) {
-      if (!r.ok) throw new Error('update failed');
+      if (!r.ok) throw new Error('update failed (' + r.status + ')');
+      return r.json();
+    });
+  }
+
+  function patchItem(orderId, itemId, status, reason) {
+    return patch('/order/' + orderId + '/items/' + itemId, { status: status, reason: reason || '' });
+  }
+
+  function cancelItem(orderId, itemId, reason) {
+    return sfetch('/order/' + orderId + '/items/' + itemId + '/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason || '' }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error('cancel failed (' + r.status + ')');
+      return r.json();
+    });
+  }
+
+  function cancelOrder(orderId) {
+    return sfetch('/order/' + orderId + '/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }).then(function (r) {
+      if (!r.ok) throw new Error('cancel failed (' + r.status + ')');
       return r.json();
     });
   }
@@ -66,8 +122,6 @@
   function groupLabel(o) { return o.order_type === 'takeaway' ? '\uD83E\uDD61 Takeaway' : 'Table ' + o.table_number; }
 
   // ── Notification integration ──────────────────────────────────────────────
-  // On the very first poll we seed all visible orders as "known" so a page
-  // refresh does NOT replay sounds for orders that were already there.
   var _firstRender = true;
 
   function render(orders) {
@@ -111,19 +165,20 @@
     });
   }
 
+  function statusPill(status, cur) {
+    var cls = 'item-pill item-st-' + String(status || '').toLowerCase();
+    return "<span class='" + esc(cls) + "'>" + esc(ITEM_STATUS_LABEL[status] || status) + '</span>';
+  }
+
   function buildCard(o) {
     var card = document.createElement('div');
     card.className = 'card ' + o.status;
     card.setAttribute('data-order-id', o.id);
-    var items = (o.items || []).map(function (it) {
-      var note = it.instructions ? "<div class='note'>\uD83D\uDCDD " + esc(it.instructions) + '</div>' : '';
-      return "<div><span class='q'>" + it.quantity + '\xD7</span> ' + esc(it.name) + note + '</div>';
-    }).join('');
 
-    var isTerminal = TERMINAL_STATUSES[o.status];
+    var isOrderTerminal = ORDER_TERMINAL[o.status];
     var mins       = elapsedMinutes(o.created_at);
     var info       = elapsedInfo(mins);
-    var badgeHtml  = isTerminal
+    var badgeHtml  = isOrderTerminal
       ? ''
       : "<span class='elapsed-badge elapsed-" + info.cls + "' " +
           "data-placed-at='" + esc(o.created_at) + "' " +
@@ -137,78 +192,113 @@
         "<span class='badge " + o.order_type + "'>" +
           (o.order_type === 'takeaway' ? '\uD83E\uDD61 ' + (o.customer_name ? esc(o.customer_name) : 'Takeaway') : 'Table ' + esc(o.table_number)) +
         '</span>' +
+        "<span class='order-pill order-st-" + esc(o.status) + "'>" +
+          esc(ITEM_STATUS_LABEL[o.status] || o.status) + '</span>' +
         badgeHtml +
       '</div>' +
       (o.zone ? "<div class='zone'>Zone: " + esc(o.zone) + '</div>' : '') +
-      "<div class='items'>" + items + '</div>' +
-      "<div class='meta'>" + o.currency + Number(o.total).toFixed(2) + ' \xB7 placed ' + new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
+      "<div class='items'>" + buildItemsHtml(o) + '</div>' +
+      "<div class='meta'>" + o.currency + Number(o.total || 0).toFixed(2) + ' \xB7 placed ' + new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
 
     var actions = document.createElement('div');
     actions.className = 'actions';
 
-    function lock(btn, promise) {
-      // Disable all buttons immediately for visual feedback.
+    function lock(promise) {
       Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = true; });
-      promise.then(function (updated) {
-        // The PATCH returns the updated order. Rebuild just this card in-place
-        // from the server response — no poll(), no full re-render.
-        // Realtime fires on other devices from the same DB write.
-        if (updated && updated.id) {
-          var newCard = buildCard(updated);
-          if (card.parentNode) card.parentNode.replaceChild(newCard, card);
-          // If the order is now terminal (served/cancelled), check whether
-          // the whole table-group is empty and remove it.
-          if (TERMINAL_STATUSES[updated.status]) {
-            var group = newCard.closest ? newCard.closest('.table-group') : null;
-            if (group) {
-              var remaining = group.querySelectorAll('.card:not(.served):not(.cancelled)');
-              if (!remaining.length) group.parentNode && group.parentNode.removeChild(group);
-            }
-            if (!grid.querySelector('.card')) emptyEl.style.display = 'block';
-          }
-        } else {
-          // Fallback: couldn't parse response — re-enable buttons.
-          Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = false; });
-        }
+      Array.prototype.forEach.call(card.querySelectorAll('button'), function (b) { b.disabled = true; });
+      promise.then(function () {
+        poll(); // refresh board; realtime pushes to other devices
       }, function (e) {
         Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = false; });
+        Array.prototype.forEach.call(card.querySelectorAll('button'), function (b) { b.disabled = false; });
         showErr(e);
       });
     }
 
-    if (NEXT[o.status]) {
-      var adv = document.createElement('button');
-      adv.className   = 'b-advance';
-      adv.textContent = NEXT_LABEL[o.status];
-      adv.onclick     = function () { lock(adv, patch(o.id, { status: NEXT[o.status] })); };
-      actions.appendChild(adv);
-    }
-    // Cancel is available to ALL roles (kitchen + manager/admin).
-    // Backend allows kitchen to cancel but blocks payment changes.
-    // Cancelled orders disappear from kitchen view and show as cancelled in manager.
-    if (o.status !== 'cancelled' && o.status !== 'served') {
-      var cancel = document.createElement('button');
-      cancel.className   = 'b-cancel';
-      cancel.textContent = 'Cancel';
-      cancel.onclick     = function () {
-        if (confirm('Cancel order ' + o.order_no + '?'))
-          lock(cancel, patch(o.id, { status: 'cancelled' }));
+    // Cancel whole order (cancels every active item).
+    var allTerminal = true;
+    (orderItems(o)).forEach(function (it) {
+      if (!ITEM_TERMINAL[it.status]) allTerminal = false;
+    });
+    if (!isOrderTerminal && !allTerminal) {
+      var cancelAll = document.createElement('button');
+      cancelAll.className = 'b-cancel-order';
+      cancelAll.textContent = 'Cancel order';
+      cancelAll.onclick = function () {
+        if (confirm('Cancel order ' + o.order_no + ' (all items)?'))
+          lock(cancelOrder(o.id));
       };
-      actions.appendChild(cancel);
+      actions.appendChild(cancelAll);
     }
     card.appendChild(actions);
+
+    // Wire up per-item buttons now that the card is in the DOM.
+    wireItemButtons(card, o.id, o, lock);
     return card;
+  }
+
+  function buildItemsHtml(o) {
+    var items = orderItems(o);
+    if (!items.length) return "<div class='item-row'><span class='nm'>No items</span></div>";
+    return items.map(function (it) {
+      var status = it.status || 'pending';
+      var isTerminal = ITEM_TERMINAL[status];
+      var isCancellable = ITEM_CANCELLABLE[status];
+      var next = ITEM_NEXT[status];
+      var note = it.instructions ? "<div class='item-note'>\uD83D\uDCDD " + esc(it.instructions) + '</div>' : '';
+      var qty = it.quantity != null ? it.quantity : 1;
+      var controls = '';
+      var actionLabel = ITEM_NEXT_LABEL[next] || ('Mark ' + next);
+      if (next) {
+        controls += "<button class='item-advance' data-item-id='" + esc(it.id) + "' data-next='" + esc(next) + "' aria-label='" + esc(actionLabel) + "'>" + esc(actionLabel) + '</button>';
+      } else if (isTerminal) {
+        controls += "<span class='item-terminal'>" + esc(ITEM_STATUS_LABEL[status]) + '</span>';
+      }
+      if (isCancellable) {
+        controls += "<button class='item-cancel' data-item-id='" + esc(it.id) + "'>\u2716 Cancel</button>";
+      }
+      return (
+        "<div class='item-row item-st-" + esc(String(status).toLowerCase()) + "' data-item-id='" + esc(it.id) + "'>" +
+        "<div class='item-left'>" +
+          "<span class='item-qty'>" + esc(qty) + '\xD7</span>' +
+          "<span class='item-name'>" + esc(it.name) + '</span>' + note +
+        '</div>' +
+        "<div class='item-price'>" + (o.currency || '$') + Number(it.line_total || 0).toFixed(2) + '</div>' +
+        "<div class='item-right'>" +
+          statusPill(status, o.currency) + controls +
+        '</div>' +
+        '</div>'
+      );
+    }).join('');
+  }
+
+  function wireItemButtons(card, orderId, order, lock) {
+    var items = orderItems(order);
+    Array.prototype.forEach.call(card.querySelectorAll('button.item-advance'), function (btn) {
+      btn.onclick = function () {
+        var itemId = btn.getAttribute('data-item-id');
+        var next   = btn.getAttribute('data-next');
+        var item   = items.find(function (it) { return String(it.id) === itemId; });
+        var promise = patchItem(orderId, itemId, next).then(function () {
+          if (next === 'ready' && window.DineNotify && item) {
+            window.DineNotify.onItemReady(order, item);
+          }
+        });
+        lock(promise);
+      };
+    });
+    Array.prototype.forEach.call(card.querySelectorAll('button.item-cancel'), function (btn) {
+      btn.onclick = function () {
+        var itemId = btn.getAttribute('data-item-id');
+        if (!confirm('Cancel this item?')) return;
+        lock(cancelItem(orderId, itemId));
+      };
+    });
   }
 
   function showErr(e) { errEl.textContent = 'Error: ' + e.message; }
 
   // ── Data fetch ────────────────────────────────────────────────────────────
-  // poll() is called in two cases only:
-  //   1. Once on page load (initial render).
-  //   2. When the realtime channel pushes a change from ANOTHER device
-  //      (e.g. a second kitchen screen, manager marking paid, new order).
-  // It is NOT called after your own button clicks — those update the card
-  // in-place from the PATCH response via lock() above.
   var pollInFlight = false;
   function poll() {
     if (pollInFlight || document.hidden) return Promise.resolve();
@@ -220,28 +310,19 @@
       .then(function () { pollInFlight = false; });
   }
 
-  // ── Live-indicator blink ──────────────────────────────────────────────────
-  // Purely cosmetic — runs regardless of realtime/polling mode.
   setInterval(function () {
     liveEl.textContent = liveEl.textContent === 'live' ? '\xB7live\xB7' : 'live';
   }, 3000);
 
-  // Elapsed-time badge refresh — cosmetic, no network.
   setInterval(tickElapsedBadges, TIMER_MS);
 
-  // ── Realtime setup (via RealtimeManager) ─────────────────────────────────
   function setupRealtime(identity) {
     if (!window.supabase || !window.RealtimeManager) return Promise.resolve(false);
     if (!identity || !identity.outletId)               return Promise.resolve(false);
-
     return window.RealtimeManager.init({ outletId: identity.outletId })
       .then(function (ok) {
         if (!ok) return false;
-
-        // A change arrived from another device/session → full refresh.
-        // This is the ONLY time poll() runs after initial load.
         window.RealtimeManager.on('orders', function () { poll(); });
-
         realtimeActive = true;
         return true;
       })
@@ -251,8 +332,6 @@
       });
   }
 
-  // ── Degraded polling (when realtime unavailable) ──────────────────────────
-  // Only active when Supabase is not configured or unreachable.
   var _fallbackTimer = null;
   function startFallbackPolling() {
     if (_fallbackTimer || realtimeActive) return;
@@ -260,20 +339,14 @@
       if (!realtimeActive) poll();
     }, 8000);
   }
-
   function stopFallbackPolling() {
     if (_fallbackTimer) { clearInterval(_fallbackTimer); _fallbackTimer = null; }
   }
 
-  // ── Page focus recovery ───────────────────────────────────────────────────
-  // When the tab regains visibility, pull a fresh snapshot.
-  // With realtime active the channel resumes automatically; this one-shot
-  // poll just fills the gap that may have occurred while hidden.
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) poll();
   });
 
-  // ── Buttons ───────────────────────────────────────────────────────────────
   document.getElementById('closeBtn').addEventListener('click', function () {
     var tn = document.getElementById('closeTable').value.trim();
     if (!tn) return;
@@ -292,7 +365,7 @@
   });
 
   document.getElementById('tokenBtn').addEventListener('click', function () { promptToken(true); poll(); });
-  // ── Identity + init ───────────────────────────────────────────────────────
+
   function loadIdentity() {
     return fetch('/auth/me', { credentials: 'include' })
       .then(function (r) { if (!r.ok) throw new Error('Authentication required'); return r.json(); })
@@ -303,11 +376,6 @@
           document.querySelector('h1').textContent = 'Kitchen Portal';
         }
         if (window.DineNotify) window.DineNotify.init('kitchen');
-
-        // poll() once for the initial render, then realtime takes over.
-        // setupRealtime resolves before poll() so the WS is open before
-        // the first render — any order that arrives during the fetch is
-        // caught by the channel and triggers a second poll automatically.
         return poll().then(function () {
           return setupRealtime(me).then(function (ok) {
             if (!ok) startFallbackPolling();

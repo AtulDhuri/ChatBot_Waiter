@@ -758,11 +758,715 @@ async def update_cart(
     )
 
 
+# ---- Order item lifecycle --------------------------------------------------
+
+# Item-level statuses tracked per menu item inside an order.
+ITEM_PENDING   = "pending"
+ITEM_ACCEPTED  = "accepted"
+ITEM_PREPARING = "preparing"
+ITEM_READY     = "ready"
+ITEM_SERVED    = "served"
+ITEM_CANCELLED = "cancelled"
+
+ALL_ITEM_STATUSES = (
+    ITEM_PENDING, ITEM_ACCEPTED, ITEM_PREPARING,
+    ITEM_READY, ITEM_SERVED, ITEM_CANCELLED,
+)
+
+# Item statuses that keep an item in the active kitchen queue (prep/plating).
+ACTIVE_ITEM_STATUSES = (ITEM_PENDING, ITEM_ACCEPTED, ITEM_PREPARING, ITEM_READY)
+
+# Terminal item statuses.
+TERMINAL_ITEM_STATUSES = (ITEM_SERVED, ITEM_CANCELLED)
+
+# Order-level statuses (auto-derived from item statuses).
+ORDER_NEW          = "new"
+ORDER_PREPARING    = "preparing"
+ORDER_READY        = "ready"
+ORDER_PARTIAL      = "partially_served"
+ORDER_SERVED       = "served"
+ORDER_CANCELLED    = "cancelled"
+
+# Active (kitchen-relevant) order statuses vs terminal ones.
+ACTIVE_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served")
+ALL_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served", "served", "cancelled")
+
+# Items that still require kitchen work (not served, not cancelled).
+KITCHEN_ACTIVE_ITEM_STATUSES = (ITEM_PENDING, ITEM_ACCEPTED, ITEM_PREPARING, ITEM_READY)
+
+# Per-item refund-policy keys.
+REFUND_POLICY_KEY = "refund_policy"
+
+
+def _compute_order_status(statuses: List[str]) -> str:
+    """Derive the overall order status from its item statuses.
+
+    Rules:
+      - Cancelled items do not block completion. If every item is cancelled,
+        the order is cancelled.
+      - If any non-cancelled item is preparing, the order is preparing.
+      - Else if any non-cancelled item is ready, the order is ready.
+      - If every non-cancelled item is served, the order is served.
+      - Else if some items are served while others remain active, the order is
+        partially served.
+      - Else (all pending/accepted) the order is new.
+    """
+    if not statuses:
+        return ORDER_NEW
+
+    non_cancelled = [s for s in statuses if s != ITEM_CANCELLED]
+    if not non_cancelled:
+        return ORDER_CANCELLED
+
+    if any(s == ITEM_PREPARING for s in non_cancelled):
+        return ORDER_PREPARING
+
+    if any(s == ITEM_READY for s in non_cancelled):
+        if any(s == ITEM_SERVED for s in non_cancelled):
+            return ORDER_PARTIAL
+        return ORDER_READY
+
+    if all(s == ITEM_SERVED for s in non_cancelled):
+        return ORDER_SERVED
+
+    if any(s == ITEM_SERVED for s in non_cancelled):
+        return ORDER_PARTIAL
+
+    return ORDER_NEW
+
+
+def _recompute_order_total(restaurant_id: int, items: List[Dict[str, Any]]) -> tuple[float, float, float]:
+    """Recompute subtotal/tax/total from non-cancelled order items."""
+    subtotal = 0.0
+    for it in items:
+        if it.get("status") == ITEM_CANCELLED:
+            continue
+        subtotal += float(it.get("line_total") or 0)
+    subtotal = round(subtotal, 2)
+    tax = round(subtotal * 0.08, 2)
+    total = round(subtotal + tax, 2)
+    return subtotal, tax, total
+
+
+async def create_order_items(
+    session: AsyncSession,
+    order_id: int,
+    restaurant_id: int,
+    line_items: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Insert order_items rows for a newly placed order.
+
+    Every item starts in ``pending`` status (awaiting kitchen acceptance).
+    Returns the inserted rows as dicts.
+    """
+    rows: List[Dict[str, Any]] = []
+    for it in line_items:
+        row = (
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO order_items
+                        (order_id, restaurant_id, menu_item_id, name, price,
+                         quantity, line_total, instructions, status, previous_status)
+                    VALUES
+                        (:oid, :rid, :mid, :name, :price, :qty, :lt, :instr,
+                         :status, :prev)
+                    RETURNING id, order_id, restaurant_id, menu_item_id, name,
+                              price, quantity, line_total, instructions, status,
+                              previous_status, cancelled_at, cancelled_by,
+                              cancel_reason, created_at, updated_at
+                    """
+                ),
+                {
+                    "oid": order_id,
+                    "rid": restaurant_id,
+                    "mid": it.get("menu_item_id"),
+                    "name": it.get("name", "Item"),
+                    "price": float(it.get("price") or 0),
+                    "qty": int(it.get("quantity") or 1),
+                    "lt": float(it.get("line_total") or 0),
+                    "instr": it.get("instructions") or "",
+                    "status": ITEM_PENDING,
+                    "prev": None,
+                },
+            )
+        ).mappings().first()
+        rows.append(dict(row) if row else {})
+    return rows
+
+
+async def get_order_items(
+    session: AsyncSession, order_id: int
+) -> List[Dict[str, Any]]:
+    """Return all order_items for an order, oldest first."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT id, order_id, restaurant_id, menu_item_id, name, price,
+                       quantity, line_total, instructions, status,
+                       previous_status, cancelled_at, cancelled_by,
+                       cancel_reason, created_at, updated_at
+                FROM order_items
+                WHERE order_id = :oid
+                ORDER BY created_at ASC, id ASC
+                """
+            ),
+            {"oid": order_id},
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def get_order_item(
+    session: AsyncSession, order_item_id: int
+) -> Optional[Dict[str, Any]]:
+    """Return a single order_item row with its parent order_id."""
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT id, order_id, restaurant_id, menu_item_id, name, price,
+                       quantity, line_total, instructions, status,
+                       previous_status, cancelled_at, cancelled_by,
+                       cancel_reason, created_at, updated_at
+                FROM order_items
+                WHERE id = :id
+                """
+            ),
+            {"id": order_item_id},
+        )
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+async def get_order_items_by_status(
+    session: AsyncSession, restaurant_id: int, statuses: tuple
+) -> List[Dict[str, Any]]:
+    """Return active-kitchen order items across orders for a restaurant."""
+    params: Dict[str, Any] = {"rid": restaurant_id}
+    keys = []
+    for i, s in enumerate(statuses):
+        k = f"s{i}"
+        params[k] = s
+        keys.append(f":{k}")
+    rows = (
+        await session.execute(
+            text(
+                f"""
+                SELECT oi.id, oi.order_id, oi.restaurant_id, oi.menu_item_id,
+                       oi.name, oi.price, oi.quantity, oi.line_total,
+                       oi.instructions, oi.status, oi.previous_status,
+                       oi.cancelled_at, oi.cancelled_by, oi.cancel_reason,
+                       oi.created_at, oi.updated_at,
+                       o.order_no, o.table_number, o.order_type,
+                       o.customer_name, o.session_id
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE oi.restaurant_id = :rid
+                  AND oi.status IN ({', '.join(keys)})
+                ORDER BY oi.created_at ASC
+                """
+            ),
+            params,
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def update_item_status(
+    session: AsyncSession,
+    order_item_id: int,
+    new_status: str,
+    changed_by: Optional[int] = None,
+    changed_by_role: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Transition a single order item to a new status.
+
+    Records the previous status, writes an item_status_history row, then
+    recomputes the parent order's status (and total) from its item statuses.
+    Returns the updated order_item row, or None when not found.
+    """
+    if new_status not in ALL_ITEM_STATUSES:
+        raise ValueError(f"Unknown item status: {new_status}")
+
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT oi.id, oi.order_id, oi.restaurant_id, oi.status
+                FROM order_items oi
+                WHERE oi.id = :id
+                """
+            ),
+            {"id": order_item_id},
+        )
+    ).mappings().first()
+    if not row:
+        return None
+
+    old_status = row["status"]
+    if old_status == new_status:
+        # No-op: still return the item without writing duplicate history.
+        return dict(row)
+
+    # Block forward progress out of terminal states.
+    if old_status in TERMINAL_ITEM_STATUSES:
+        return dict(row)
+
+    updated = (
+        await session.execute(
+            text(
+                """
+                UPDATE order_items
+                SET status = :new_status,
+                    previous_status = :old_status,
+                    updated_at = now()
+                WHERE id = :id
+                RETURNING id, order_id, restaurant_id, menu_item_id, name, price,
+                          quantity, line_total, instructions, status,
+                          previous_status, cancelled_at, cancelled_by,
+                          cancel_reason, created_at, updated_at
+                """
+            ),
+            {"new_status": new_status, "old_status": old_status, "id": order_item_id},
+        )
+    ).mappings().first()
+    item = dict(updated) if updated else {}
+
+    # Audit history.
+    await session.execute(
+        text(
+            """
+            INSERT INTO item_status_history
+                (order_item_id, order_id, restaurant_id, from_status, to_status,
+                 changed_by, changed_by_role, reason, metadata, created_at)
+            VALUES
+                (:item_id, :order_id, :rid, :from_status, :to_status,
+                 :changed_by, :changed_by_role, :reason, CAST(:metadata AS JSONB), now())
+            """
+        ),
+        {
+            "item_id": order_item_id,
+            "order_id": row["order_id"],
+            "rid": row["restaurant_id"],
+            "from_status": old_status,
+            "to_status": new_status,
+            "changed_by": changed_by,
+            "changed_by_role": changed_by_role,
+            "reason": reason,
+            "metadata": json.dumps({}),
+        },
+    )
+
+    # Recompute parent order status from all its item statuses + adjust total.
+    items = await get_order_items(session, row["order_id"])
+    statuses = [it["status"] for it in items]
+    order_status = _compute_order_status(statuses)
+    subtotal, tax, total = _recompute_order_total(row["restaurant_id"], items)
+
+    await session.execute(
+        text(
+            """
+            UPDATE orders
+            SET status = :status, subtotal = :subtotal, tax = :tax,
+                total = :total, updated_at = now()
+            WHERE id = :oid
+            """
+        ),
+        {
+            "status": order_status,
+            "subtotal": subtotal,
+            "tax": tax,
+            "total": total,
+            "oid": row["order_id"],
+        },
+    )
+    return item
+
+
+async def cancel_item(
+    session: AsyncSession,
+    order_item_id: int,
+    cancelled_by: Optional[int] = None,
+    cancelled_by_role: Optional[str] = None,
+    reason: Optional[str] = None,
+    refund_required: bool = False,
+    refund_amount: float = 0.0,
+    refund_policy: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Cancel a single order item (only when pending or accepted).
+
+    Records cancellation timestamps/actor/reason, writes history +
+    item_cancellations, then recomputes the parent order. Returns the item
+    row, or None when not found / not cancellable.
+    """
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT oi.id, oi.order_id, oi.restaurant_id, oi.status,
+                       oi.quantity AS previous_quantity, oi.line_total
+                FROM order_items oi
+                WHERE oi.id = :id
+                """
+            ),
+            {"id": order_item_id},
+        )
+    ).mappings().first()
+    if not row:
+        return None
+    if row["status"] not in (ITEM_PENDING, ITEM_ACCEPTED):
+        return None  # blocked once preparing/ready/served
+
+    previous_status = row["status"]
+    previous_quantity = int(row["previous_quantity"] or 1)
+    line_total = float(row["line_total"] or 0)
+
+    updated = (
+        await session.execute(
+            text(
+                """
+                UPDATE order_items
+                SET status = :cancelled,
+                    previous_status = :prev_status,
+                    cancelled_at = now(),
+                    cancelled_by = :by,
+                    cancel_reason = :reason,
+                    updated_at = now()
+                WHERE id = :id
+                RETURNING id, order_id, restaurant_id, menu_item_id, name, price,
+                          quantity, line_total, instructions, status,
+                          previous_status, cancelled_at, cancelled_by,
+                          cancel_reason, created_at, updated_at
+                """
+            ),
+            {
+                "cancelled": ITEM_CANCELLED,
+                "prev_status": previous_status,
+                "by": cancelled_by,
+                "reason": reason,
+                "id": order_item_id,
+            },
+        )
+    ).mappings().first()
+    item = dict(updated) if updated else {}
+
+    await session.execute(
+        text(
+            """
+            INSERT INTO item_status_history
+                (order_item_id, order_id, restaurant_id, from_status, to_status,
+                 changed_by, changed_by_role, reason, metadata, created_at)
+            VALUES
+                (:item_id, :order_id, :rid, :from_status, :to_status,
+                 :changed_by, :changed_by_role, :reason, CAST(:metadata AS JSONB), now())
+            """
+        ),
+        {
+            "item_id": order_item_id,
+            "order_id": row["order_id"],
+            "rid": row["restaurant_id"],
+            "from_status": previous_status,
+            "to_status": ITEM_CANCELLED,
+            "changed_by": cancelled_by,
+            "changed_by_role": cancelled_by_role,
+            "reason": reason or "cancelled",
+            "metadata": json.dumps({"action": "cancel_item"}),
+        },
+    )
+
+    await session.execute(
+        text(
+            """
+            INSERT INTO item_cancellations
+                (order_item_id, order_id, restaurant_id, cancelled_by,
+                 cancelled_by_role, reason, refund_required, refund_amount,
+                 refund_status, refund_policy, previous_quantity, new_quantity,
+                 created_at)
+            VALUES
+                (:item_id, :order_id, :rid, :by, :role, :reason,
+                 :refund_required, :refund_amount, 'pending', :policy,
+                 :prev_qty, 0, now())
+            """
+        ),
+        {
+            "item_id": order_item_id,
+            "order_id": row["order_id"],
+            "rid": row["restaurant_id"],
+            "by": cancelled_by,
+            "role": cancelled_by_role,
+            "reason": reason,
+            "refund_required": refund_required,
+            "refund_amount": refund_amount,
+            "policy": refund_policy,
+            "prev_qty": previous_quantity,
+        },
+    )
+
+    # Recompute parent order status + total.
+    items = await get_order_items(session, row["order_id"])
+    statuses = [it["status"] for it in items]
+    order_status = _compute_order_status(statuses)
+    subtotal, tax, total = _recompute_order_total(row["restaurant_id"], items)
+
+    await session.execute(
+        text(
+            """
+            UPDATE orders
+            SET status = :status, subtotal = :subtotal, tax = :tax,
+                total = :total, updated_at = now()
+            WHERE id = :oid
+            """
+        ),
+        {
+            "status": order_status,
+            "subtotal": subtotal,
+            "tax": tax,
+            "total": total,
+            "oid": row["order_id"],
+        },
+    )
+    return item
+
+
+async def reduce_item_quantity(
+    session: AsyncSession,
+    order_item_id: int,
+    new_quantity: int,
+    changed_by: Optional[int] = None,
+    changed_by_role: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Reduce an item's quantity; hitting zero auto-converts to cancelled.
+
+    Only allowed on pending/accepted items. Returns the item row or None.
+    """
+    if new_quantity < 0:
+        raise ValueError("Quantity cannot be negative")
+
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT oi.id, oi.order_id, oi.restaurant_id, oi.status,
+                       oi.quantity, oi.price, oi.line_total
+                FROM order_items oi
+                WHERE oi.id = :id
+                """
+            ),
+            {"id": order_item_id},
+        )
+    ).mappings().first()
+    if not row:
+        return None
+    if row["status"] not in (ITEM_PENDING, ITEM_ACCEPTED):
+        return None
+
+    old_qty = int(row["quantity"] or 1)
+    if new_quantity >= old_qty:
+        return dict(row)
+
+    price = float(row["price"] or 0)
+    new_line_total = round(price * new_quantity, 2)
+
+    if new_quantity == 0:
+        return await cancel_item(
+            session, order_item_id,
+            cancelled_by=changed_by, cancelled_by_role=changed_by_role,
+            reason="quantity reduced to zero",
+        )
+
+    updated = (
+        await session.execute(
+            text(
+                """
+                UPDATE order_items
+                SET quantity = :qty, line_total = :lt, updated_at = now()
+                WHERE id = :id
+                RETURNING id, order_id, restaurant_id, menu_item_id, name, price,
+                          quantity, line_total, instructions, status,
+                          previous_status, cancelled_at, cancelled_by,
+                          cancel_reason, created_at, updated_at
+                """
+            ),
+            {"qty": new_quantity, "lt": new_line_total, "id": order_item_id},
+        )
+    ).mappings().first()
+    item = dict(updated) if updated else {}
+
+    await session.execute(
+        text(
+            """
+            INSERT INTO item_status_history
+                (order_item_id, order_id, restaurant_id, from_status, to_status,
+                 changed_by, changed_by_role, reason, metadata, created_at)
+            VALUES
+                (:item_id, :order_id, :rid, :from_status, :to_status,
+                 :changed_by, :changed_by_role, :reason, CAST(:metadata AS JSONB), now())
+            """
+        ),
+        {
+            "item_id": order_item_id,
+            "order_id": row["order_id"],
+            "rid": row["restaurant_id"],
+            "from_status": row["status"],
+            "to_status": row["status"],
+            "changed_by": changed_by,
+            "changed_by_role": changed_by_role,
+            "reason": f"quantity {old_qty} -> {new_quantity}",
+            "metadata": json.dumps({"action": "reduce_quantity",
+                                    "previous_quantity": old_qty,
+                                    "new_quantity": new_quantity}),
+        },
+    )
+
+    items = await get_order_items(session, row["order_id"])
+    statuses = [it["status"] for it in items]
+    order_status = _compute_order_status(statuses)
+    subtotal, tax, total = _recompute_order_total(row["restaurant_id"], items)
+
+    await session.execute(
+        text(
+            """
+            UPDATE orders
+            SET status = :status, subtotal = :subtotal, tax = :tax,
+                total = :total, updated_at = now()
+            WHERE id = :oid
+            """
+        ),
+        {
+            "status": order_status,
+            "subtotal": subtotal,
+            "tax": tax,
+            "total": total,
+            "oid": row["order_id"],
+        },
+    )
+    return item
+
+
+async def get_item_status_history(
+    session: AsyncSession, order_item_id: int
+) -> List[Dict[str, Any]]:
+    """Full audit trail for one item: status changes, timestamps, actor."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT id, order_item_id, order_id, restaurant_id, from_status,
+                       to_status, changed_by, changed_by_role, reason, metadata,
+                       created_at
+                FROM item_status_history
+                WHERE order_item_id = :id
+                ORDER BY created_at ASC, id ASC
+                """
+            ),
+            {"id": order_item_id},
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def get_item_cancellations(
+    session: AsyncSession, order_id: int
+) -> List[Dict[str, Any]]:
+    """Cancellation records for an order (audit + refund info)."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT id, order_item_id, order_id, restaurant_id, cancelled_by,
+                       cancelled_by_role, reason, refund_required, refund_amount,
+                       refund_status, refund_policy, previous_quantity,
+                       new_quantity, created_at
+                FROM item_cancellations
+                WHERE order_id = :oid
+                ORDER BY created_at DESC
+                """
+            ),
+            {"oid": order_id},
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def get_refund_policy(
+    session: AsyncSession, restaurant_id: int
+) -> Dict[str, Any]:
+    """Return the restaurant's configured refund policy (defaults applied)."""
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT setting_value FROM restaurant_settings
+                WHERE restaurant_id = :rid AND setting_key = :key
+                """
+            ),
+            {"rid": restaurant_id, "key": REFUND_POLICY_KEY},
+        )
+    ).mappings().first()
+    if row:
+        val = row.get("setting_value")
+        return dict(val) if isinstance(val, dict) else {}
+    return {"mode": "proportional", "prepaid_full_refund": True, "postpaid_no_charge": True}
+
+
+async def set_refund_policy(
+    session: AsyncSession, restaurant_id: int, policy: Dict[str, Any],
+    updated_by: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Upsert the restaurant's refund policy."""
+    await session.execute(
+        text(
+            """
+            INSERT INTO restaurant_settings
+                (restaurant_id, setting_key, setting_value, updated_by, updated_at)
+            VALUES (:rid, :key, CAST(:value AS JSONB), :by, now())
+            ON CONFLICT (restaurant_id, setting_key) DO UPDATE
+                SET setting_value = EXCLUDED.setting_value,
+                    updated_by = EXCLUDED.updated_by,
+                    updated_at = now()
+            """
+        ),
+        {
+            "rid": restaurant_id,
+            "key": REFUND_POLICY_KEY,
+            "value": json.dumps(policy or {}),
+            "by": updated_by,
+        },
+    )
+    return policy or {}
+
+
+async def cancel_all_order_items(
+    session: AsyncSession, order_id: int,
+    cancelled_by: Optional[int] = None, cancelled_by_role: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> int:
+    """Cancel every non-terminal item in an order (used by order-level cancel).
+
+    Returns the number of items actually cancelled.
+    """
+    items = await get_order_items(session, order_id)
+    count = 0
+    for it in items:
+        if it.get("status") in TERMINAL_ITEM_STATUSES:
+            continue
+        await cancel_item(
+            session, it["id"],
+            cancelled_by=cancelled_by, cancelled_by_role=cancelled_by_role,
+            reason=reason or "order cancelled",
+        )
+        count += 1
+    return count
+
+
 # ---- Orders --------------------------------------------------------------
 
 # Active (kitchen-relevant) statuses vs terminal ones.
-ACTIVE_ORDER_STATUSES = ("new", "preparing", "ready")
-ALL_ORDER_STATUSES = ("new", "preparing", "ready", "served", "cancelled")
+ACTIVE_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served")
+ALL_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served", "served", "cancelled")
 
 
 async def _next_order_no(session: AsyncSession, restaurant_id: int) -> str:
@@ -840,7 +1544,16 @@ async def create_order(
             },
         )
     ).mappings().first()
-    return dict(row)
+    order = dict(row)
+    # Source of truth for item-level lifecycle: persist each line item as its
+    # own order_items row (all start pending). The legacy orders.items JSONB
+    # is kept as a denormalized sales snapshot for reports/billing backward
+    # compat, but status is driven by order_items.
+    order_items_rows = await create_order_items(
+        session, order["id"], restaurant_id, items
+    )
+    order["order_items"] = order_items_rows
+    return order
 
 
 async def close_table(
@@ -896,7 +1609,10 @@ async def list_orders(
             params,
         )
     ).mappings().all()
-    return [dict(r) for r in rows]
+    orders = [dict(r) for r in rows]
+    for order in orders:
+        order["order_items"] = await get_order_items(session, order["id"])
+    return orders
 
 
 async def list_manager_orders(
@@ -938,7 +1654,26 @@ async def list_manager_orders(
             params,
         )
     ).mappings().all()
-    return [dict(r) for r in rows]
+    orders = [dict(r) for r in rows]
+    for order in orders:
+        lifecycle_items = await get_order_items(session, order["id"])
+        if lifecycle_items:
+            order["items"] = [
+                {
+                    "name": it["name"],
+                    "price": float(it["price"]),
+                    "quantity": it["quantity"],
+                    "line_total": float(it["line_total"]),
+                    "instructions": it.get("instructions") or "",
+                    "status": it["status"],
+                    "id": it["id"],
+                }
+                for it in lifecycle_items
+            ]
+            order["status"] = _compute_order_status(
+                [it["status"] for it in lifecycle_items]
+            )
+    return orders
 
 
 async def get_order(
@@ -955,7 +1690,11 @@ async def get_order(
             {"id": order_id},
         )
     ).mappings().first()
-    return dict(row) if row else None
+    if not row:
+        return None
+    order = dict(row)
+    order["order_items"] = await get_order_items(session, order_id)
+    return order
 
 
 async def update_order_status(

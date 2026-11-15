@@ -324,6 +324,12 @@ export function fetchBill() {
   });
 }
 
+export function fetchCancelItem(orderItemId, reason) {
+  return postJson("/my-order/items/" + encodeURIComponent(orderItemId) + "/cancel", function () {
+    return { session_id: state.token, reason: reason || "" };
+  });
+}
+
 // The server rejected this session for a device/UA mismatch (replay defense).
 var _pinningHandled = false;
 export function handlePinningRejection() {

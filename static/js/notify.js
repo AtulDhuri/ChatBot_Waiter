@@ -34,9 +34,9 @@
 
   // Per-role event routing
   var ROLE_EVENTS = {
-    kitchen: { newOrder: true,  orderReady: false, reminder: true, danger: true  },
-    manager: { newOrder: false, orderReady: true,  reminder: false, danger: false },
-    staff:   { newOrder: false, orderReady: true,  reminder: false, danger: false },
+    kitchen: { newOrder: true,  orderReady: false, itemReady: false, reminder: true, danger: true  },
+    manager: { newOrder: false, orderReady: true,  itemReady: true,  reminder: false, danger: false },
+    staff:   { newOrder: false, orderReady: true,  itemReady: true,  reminder: false, danger: false },
   };
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -519,8 +519,8 @@
     },
 
     /**
-     * Fire when an order transitions to "ready".
-     * Deduplicates per order per page load.
+     * ORDER READY — plays order-ready.mp3 if present,
+     * otherwise falls back to descending service-bell tones.
      */
     onOrderReady: function (order) {
       var id  = String(order.id) + ':ready';
@@ -537,6 +537,30 @@
       showBanner(
         '<strong>\uD83D\uDECE\uFE0F ORDER READY</strong> &mdash; ' + escNotify(who) +
         ' &mdash; <em>Please Serve</em>',
+        'ready'
+      );
+    },
+
+    /**
+     * ITEM READY — an individual menu item is ready to serve.
+     * Notifies waiters so the dish goes to the table immediately.
+     * Deduplicates per order+item per page load.
+     */
+    onItemReady: function (order, item) {
+      var id  = String(order.id) + ':item:' + String(item.id) + ':ready';
+      var cfg = ROLE_EVENTS[_role] || {};
+      if (!cfg.itemReady) return;
+      if (_remindedIds[id]) return;
+      _remindedIds[id] = true;
+
+      if (_prefs.readyOrderSound) playOrderReady(_prefs.volume);
+
+      var who = order.order_type === 'takeaway'
+        ? ('\uD83E\uDD61 ' + (order.customer_name || 'Takeaway'))
+        : ('Table ' + (order.table_number || '?'));
+      showBanner(
+        '<strong>\uD83D\uDECE\uFE0F ITEM READY</strong> &mdash; ' + escNotify(who) +
+        ' &mdash; <em>' + escNotify(item.name) + '</em> &nbsp;<small>(' + escNotify(order.order_no) + ')</small>',
         'ready'
       );
     },

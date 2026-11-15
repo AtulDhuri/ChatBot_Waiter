@@ -17,10 +17,11 @@
   var FALLBACK_POLL_MS  = 8000;
 
   // ── Elapsed-time helpers ──────────────────────────────────────────────────
-  var ACTIVE_STATUSES = { 'new': true, preparing: true, ready: true };
+  var ACTIVE_STATUSES = { 'new': true, preparing: true, ready: true, partially_served: true };
 
   // Track status per order to detect preparing→ready transitions.
   var _prevStatus  = {};
+  var _prevItemStatus = {};
   var _firstRender = true;
 
   function elapsedMinutes(isoTimestamp) {
@@ -131,6 +132,16 @@
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
+  function itemStatusPill(it) {
+    var st = it.status || 'pending';
+    var cls = 'pill item-st-' + String(st).toLowerCase();
+    var label = {
+      pending: 'Pending', accepted: 'Accepted', preparing: 'Preparing',
+      ready: 'Ready', served: 'Served', cancelled: 'Cancelled'
+    }[st] || st;
+    return "<span class='" + esc(cls) + "'>" + esc(label) + '</span>';
+  }
+
   function itemsBlock(items, cur) {
     if (!items || !items.length)
       return "<div class='line'><span class='nm' style='color:#98a2b3'>No items</span></div>";
@@ -138,8 +149,10 @@
       var note = it.instructions
         ? "<div class='note'>\uD83D\uDCDD " + esc(it.instructions) + '</div>'
         : '';
-      return "<div class='line'><span class='nm'>" + esc(it.quantity) + '\xD7 ' + esc(it.name) +
-        "</span><span class='amt'>" + money(cur, it.line_total) + '</span></div>' + note;
+      var status = itemStatusPill(it);
+      var cancelled = it.status === 'cancelled';
+      return "<div class='line" + (cancelled ? ' cancelled' : '') + "'><span class='nm'>" + esc(it.quantity) + '\xD7 ' + esc(it.name) +
+        " " + status + "</span><span class='amt'>" + money(cur, it.line_total) + '</span></div>' + note;
     }).join('');
   }
 
@@ -291,10 +304,21 @@
         if (o.status === 'ready' && _prevStatus[o.id] && _prevStatus[o.id] !== 'ready') {
           notify.onOrderReady(o);
         }
+        (o.items || []).forEach(function (item) {
+          var key = String(o.id) + ':' + String(item.id || item.name);
+          if (item.status === 'ready' && _prevItemStatus[key] && _prevItemStatus[key] !== 'ready') {
+            notify.onItemReady(o, item);
+          }
+        });
       });
     }
 
-    orders.forEach(function (o) { _prevStatus[o.id] = o.status; });
+    orders.forEach(function (o) {
+      _prevStatus[o.id] = o.status;
+      (o.items || []).forEach(function (item) {
+        _prevItemStatus[String(o.id) + ':' + String(item.id || item.name)] = item.status;
+      });
+    });
 
     ORDERS = {};
     orders = (orders || []).slice().sort(function (a, b) {
@@ -442,31 +466,28 @@
       });
     });
 
-    // Cancel order buttons — manager can cancel any active order.
+    // Cancel order — cancels every active item in the order (server cascade).
     // The DB write triggers a realtime push to the kitchen screen which
-    // removes the card immediately via poll() (active_only=true excludes cancelled).
+    // removes the card via poll() (active_only excludes fully terminal orders).
     Array.prototype.forEach.call(cardsEl.querySelectorAll('button.cancel-order'), function (btn) {
       btn.addEventListener('click', function () {
         var orderId  = btn.getAttribute('data-id');
         var orderNo  = btn.getAttribute('data-order-no');
-        if (!confirm('Cancel order ' + orderNo + '? This cannot be undone.')) return;
+        if (!confirm('Cancel order ' + orderNo + '? All active items will be cancelled.')) return;
         btn.disabled = true;
-        sfetch('/order/' + encodeURIComponent(orderId), {
-          method: 'PATCH',
+        sfetch('/order/' + encodeURIComponent(orderId) + '/cancel', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'cancelled' }),
+          body: JSON.stringify({}),
         })
           .then(function (r) {
             if (!r.ok) throw new Error('Could not cancel order');
             return r.json();
           })
           .then(function () {
-            // Remove card immediately from manager view.
-            // Realtime will push the cancellation to kitchen screen.
             var card = btn.closest('.bill');
             if (card) card.parentNode && card.parentNode.removeChild(card);
             delete ORDERS[orderId];
-            // Refresh summary bar to reflect updated counts.
             renderSummary(Object.values(ORDERS));
             renderDelayedPanel(Object.values(ORDERS));
             if (!Object.keys(ORDERS).length) emptyEl.style.display = 'block';

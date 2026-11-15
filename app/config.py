@@ -126,8 +126,8 @@ class Settings(BaseSettings):
         In production:
           - SESSION_SECRET must be set to a strong, non-default value so
             session-token signatures cannot be forged.
-          - STAFF_TOKEN must be a strong, non-empty value so staff endpoints
-            are never left unauthenticated.
+          - AUTH_JWT_SECRET must be set to a strong, non-default value so
+            logged-in user authentication tokens cannot be forged.
         Outside production these are warnings only, preserving the zero-config
         demo experience.
         """
@@ -137,11 +137,6 @@ class Settings(BaseSettings):
         if self._is_weak_secret(self.session_secret):
             problems.append(
                 "SESSION_SECRET is unset, default, or too short "
-                f"(need >= {_MIN_SECRET_LEN} chars)"
-            )
-        if self._is_weak_secret(self.staff_token):
-            problems.append(
-                "STAFF_TOKEN is unset, weak, or too short "
                 f"(need >= {_MIN_SECRET_LEN} chars)"
             )
         if self._is_weak_secret(self.auth_jwt_secret):

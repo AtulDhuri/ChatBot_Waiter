@@ -23,6 +23,8 @@ from app.schemas import (
     ManagerSessionSettleRequest,
     ReceiptProfile,
     ReceiptProfileUpdate,
+    RefundPolicy,
+    RefundPolicyUpdate,
     SecurityEvent,
     SecurityStatus,
     TableUpsertRequest,
@@ -364,3 +366,35 @@ async def manager_set_availability(
         "name": updated["name"],
         "available": bool(updated["available"]),
     }
+
+
+# ---- Refund policy --------------------------------------------------------
+
+@router.get("/refund-policy", response_model=RefundPolicy)
+async def get_refund_policy_endpoint(
+    restaurant: str = "demo",
+    db: AsyncSession = Depends(get_db),
+    _principal: Dict[str, Any] = Depends(require_staff),
+):
+    """Return the restaurant's configured refund policy."""
+    rest = await _resolve_restaurant(db, restaurant, _principal)
+    policy = await repo.get_refund_policy(db, rest["id"])
+    return RefundPolicy(**policy)
+
+
+@router.post("/refund-policy", response_model=RefundPolicy)
+async def set_refund_policy_endpoint(
+    body: RefundPolicyUpdate,
+    db: AsyncSession = Depends(get_db),
+    _principal: Dict[str, Any] = Depends(require_staff),
+):
+    """Upsert the restaurant's refund policy (applies to item cancellations)."""
+    rest = await _resolve_restaurant(db, body.restaurant, _principal)
+    policy = {
+        "mode": body.mode,
+        "prepaid_full_refund": body.prepaid_full_refund,
+        "postpaid_no_charge": body.postpaid_no_charge,
+    }
+    saved = await repo.set_refund_policy(db, rest["id"], policy, updated_by=_principal.get("userId"))
+    return RefundPolicy(**saved)
+

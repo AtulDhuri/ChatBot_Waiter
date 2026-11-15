@@ -13,12 +13,16 @@
 
 import { api, money } from "./config.js";
 import { state, ui } from "./state.js";
-import { addMessage, el } from "./dom.js";
+import { addMessage, el, _guard } from "./dom.js";
 import { getJson } from "./api.js";
 import { endLocalSession } from "./cart.js";
+import { fetchCancelItem } from "./api.js";
 
 var STATUS_FALLBACK_MS = 45000; // backup only; Realtime is primary
 var STATUS_STEPS   = ["Placed", "Preparing", "Ready", "Served"];
+
+// Item statuses the customer may cancel.
+var CANCELLABLE_ITEM = { pending: true, accepted: true };
 
 // Realtime changes are filtered by the server-resolved internal session ID,
 // not the signed token. Orders store the internal session ID.
@@ -59,12 +63,7 @@ export function renderStatus(data, moveToBottom) {
     var row = el("div", { class: "wa-status-row" }, [head]);
 
     var items = el("div", { class: "wa-status-items" },
-      (o.items || []).map(function (item) {
-        return el("div", { class: "wa-status-item" }, [
-          el("span", {}, [String(item.quantity || 1) + "× " + item.name]),
-          el("span", {}, [money(item.line_total || 0)]),
-        ]);
-      })
+      renderOrderItems(o)
     );
     if ((o.items || []).length) row.appendChild(items);
 
@@ -108,9 +107,50 @@ export function renderStatus(data, moveToBottom) {
   } else {
     addMessage(null, "bot", card);
   }
-  state.statusNode = card;
-  if (moveToBottom && ui.body) ui.body.scrollTop = ui.body.scrollHeight;
-}
+    state.statusNode = card;
+    if (moveToBottom && ui.body) ui.body.scrollTop = ui.body.scrollHeight;
+  }
+
+  // ── Per-item status rows (customer tracking + cancellation) ───────────────
+  function renderOrderItems(o) {
+    var orderItems = o.order_items || o.items || [];
+    if (!orderItems.length)
+      return [el("div", { class: "wa-status-item wa-status-empty" }, ["No items"])];
+    return orderItems.map(function (item) {
+      var status = String(item.status || "pending").toLowerCase();
+      var qty = item.quantity != null ? item.quantity : 1;
+      var row = el("div", { class: "wa-status-item wa-item-st-" + status },
+        [
+          el("span", { class: "wa-item-name" }, [String(qty) + "\u00D7 " + escHtml(item.name)]),
+          el("span", { class: "wa-item-status wa-st-" + status }, [item.status || "Pending"]),
+          el("span", { class: "wa-item-amt" }, [money(item.line_total || 0)]),
+        ]
+      );
+      if (CANCELLABLE_ITEM[status]) {
+        var btn = el("button", { class: "wa-item-cancel" }, ["\u2716 Cancel"]);
+        btn.addEventListener("click", _guard(btn, function () {
+          if (!confirm("Cancel this item (" + escHtml(item.name) + ")?")) return;
+          return fetchCancelItem(item.id, "customer cancelled")
+            .then(function () {
+              addMessage("Item \"" + escHtml(item.name) + "\" cancelled.", "bot");
+              return pollStatusOnce();
+            })
+            .catch(function (e) {
+              addMessage("Couldn't cancel item: " + (e && e.message ? e.message : "try again"), "bot");
+            });
+        }));
+        row.appendChild(btn);
+      }
+      return row;
+    });
+  }
+
+  function escHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
 
 export function pollStatusOnce(moveToBottom) {
   if (!state.token) return Promise.resolve();

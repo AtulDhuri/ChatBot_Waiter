@@ -19,7 +19,7 @@ export var state = {
   statusTimer: null, // interval id for polling this session's order statuses
   statusNode: null, // the live-updating "your orders" card in the transcript
   billNode: null, // the live bill card in the transcript (auto-refreshes)
-  billPayBtn: null, // the "Pay now" button under the live bill
+  orderSubmitting: false, // prevents duplicate checkout submissions
 };
 
 // UI node references, populated by the render module.

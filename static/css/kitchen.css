@@ -102,3 +102,133 @@ header button { cursor: pointer; background: #2e6cf0; border: none; }
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ---- Per-item KOT rows ---- */
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 4px;
+  border-top: 1px dashed rgba(255,255,255,.10);
+  padding-top: 8px;
+}
+.item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid transparent;
+}
+.item-row.item-st-preparing { background: rgba(224,165,38,.10); border-color: rgba(224,165,38,.30); }
+.item-row.item-st-ready     { background: rgba(46,158,91,.10); border-color: rgba(46,158,91,.30); }
+.item-row.item-st-served    { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.10); }
+.item-row.item-st-cancelled { background: rgba(107,34,48,.10); border-color: rgba(107,34,48,.20); text-decoration: line-through; opacity: 0.65; }
+.item-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.item-qty { color: #9fb; font-weight: 800; }
+.item-name { color: #eceff3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+.item-note { font-size: 11px; color: #ffd27f; margin-left: 6px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.item-price { color: #8fd1ff; font-weight: 800; white-space: nowrap; flex-shrink: 0; margin-left: 8px; }
+.item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.item-pill {
+  font-size: 10px; padding: 2px 9px; border-radius: 20px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; flex-shrink: 0;
+}
+.item-st-pending   .item-pill.item-st-pending   { background: rgba(128,128,128,.35); color: #b9bbc1; }
+.item-st-accepted  .item-pill.item-st-accepted  { background: rgba(70,130,180,.4); color: #9fd; }
+.item-st-preparing .item-pill.item-st-preparing { background: rgba(224,165,38,.45); color: #fcd34d; }
+.item-st-ready     .item-pill.item-st-ready     { background: rgba(46,158,91,.45); color: #86efac; }
+.item-st-served    .item-pill.item-st-served    { background: rgba(255,255,255,.2); color: #94a3b8; }
+.item-st-cancelled .item-pill.item-st-cancelled { background: rgba(107,34,48,.3); color: #64748b; text-decoration: line-through; }
+.item-terminal {
+  font-size: 10px; padding: 2px 9px; border-radius: 20px; font-weight: 800;
+  background: rgba(255,255,255,.15); color: #94a3b8; white-space: nowrap;
+}
+button.item-advance {
+  background: #2e6cf0; border: none; color: #fff; padding: 5px 12px;
+  border-radius: 6px; font-size: 12px; cursor: pointer; flex-shrink: 0;
+}
+button.item-cancel {
+  background: #6b2230; border: none; color: #fff; padding: 5px 12px;
+  border-radius: 6px; font-size: 12px; cursor: pointer; flex-shrink: 0;
+}
+button.item-advance:disabled, button.item-cancel:disabled { opacity: 0.5; cursor: default; }
+.order-pill {
+  font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.order-st-new          { background: #7f1d1d; color: #fca5a5; }
+.order-st-preparing    { background: #78350f; color: #fcd34d; }
+.order-st-ready        { background: #052e16; color: #86efac; }
+.order-st-partially_served { background: #5b21b6; color: #d8b4fe; }
+.order-st-served       { background: rgba(255,255,255,.08); color: #94a3b8; }
+.order-st-cancelled    { background: rgba(255,255,255,.06); color: #64748b; text-decoration: line-through; }
+.b-cancel-order { background: #6b2230; }
+
+
+/* Keep the ordered item name visible on narrow kitchen cards. The status and
+   action controls can consume most of a card's width, so put the name on its
+   own row instead of allowing flexbox to shrink it to zero width. */
+.item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.item-left {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.item-price {
+  grid-column: 1;
+  margin-left: 0;
+}
+.item-right {
+  grid-column: 2;
+  justify-self: end;
+}
+
+/* Keep lifecycle action labels visible even when cards are narrow or disabled. */
+button.item-advance {
+  min-width: 96px;
+  min-height: 30px;
+  color: #fff !important;
+  white-space: nowrap;
+  text-indent: 0;
+  overflow: visible;
+}
+
+/* Multi-table kitchen layout: keep table groups visible side by side instead
+   of stacking every table below the previous one. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+.table-group {
+  min-width: 0;
+}
+.table-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+@media (max-width: 680px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

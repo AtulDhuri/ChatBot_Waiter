@@ -328,6 +328,107 @@ _SCHEMA_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS documents_restaurant_idx ON documents(restaurant_id);",
     "CREATE INDEX IF NOT EXISTS menu_items_restaurant_idx ON menu_items(restaurant_id);",
     "CREATE INDEX IF NOT EXISTS sessions_restaurant_idx ON sessions(restaurant_id);",
+    # Item-level lifecycle tracking tables.
+    # Each order item is a separate row with its own status lifecycle
+    # (pending -> accepted -> preparing -> ready -> served, or cancelled).
+    """
+    CREATE TABLE IF NOT EXISTS order_items (
+        id            SERIAL PRIMARY KEY,
+        order_id      INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        restaurant_id INTEGER NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+        menu_item_id  INTEGER REFERENCES menu_items(id) ON DELETE SET NULL,
+        name          TEXT NOT NULL,
+        price         NUMERIC(10, 2) NOT NULL DEFAULT 0,
+        quantity      INTEGER NOT NULL DEFAULT 1,
+        line_total    NUMERIC(10, 2) NOT NULL DEFAULT 0,
+        instructions  TEXT DEFAULT '',
+        status        TEXT NOT NULL DEFAULT 'pending',
+        previous_status TEXT,
+        cancelled_at  TIMESTAMPTZ,
+        cancelled_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        cancel_reason TEXT,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (order_id, menu_item_id, name)
+    );
+    """,
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';",
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS previous_status TEXT;",
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;",
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL;",
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancel_reason TEXT;",
+    "ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_status_check;",
+    "ALTER TABLE order_items ADD CONSTRAINT order_items_status_check CHECK (status IN ('pending', 'accepted', 'preparing', 'ready', 'served', 'cancelled'));",
+    "CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items(order_id);",
+    "CREATE INDEX IF NOT EXISTS order_items_status_idx ON order_items(status);",
+    "CREATE INDEX IF NOT EXISTS order_items_restaurant_idx ON order_items(restaurant_id);",
+    """
+    CREATE TABLE IF NOT EXISTS item_status_history (
+        id            SERIAL PRIMARY KEY,
+        order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+        order_id      INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        restaurant_id INTEGER NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+        from_status   TEXT,
+        to_status     TEXT NOT NULL,
+        changed_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        changed_by_role TEXT,
+        reason       TEXT,
+        metadata      JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS item_status_history_item_idx ON item_status_history(order_item_id, created_at);",
+    "CREATE INDEX IF NOT EXISTS item_status_history_order_idx ON item_status_history(order_id, created_at);",
+    """
+    CREATE TABLE IF NOT EXISTS item_cancellations (
+        id                SERIAL PRIMARY KEY,
+        order_item_id     INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+        order_id          INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        restaurant_id     INTEGER NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+        cancelled_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        cancelled_by_role TEXT,
+        reason           TEXT,
+        refund_required  BOOLEAN NOT NULL DEFAULT false,
+        refund_amount    NUMERIC(10, 2) NOT NULL DEFAULT 0,
+        refund_status    TEXT NOT NULL DEFAULT 'pending',
+        refund_policy    TEXT,
+        previous_quantity INTEGER NOT NULL DEFAULT 1,
+        new_quantity     INTEGER NOT NULL DEFAULT 0,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    "ALTER TABLE item_cancellations ADD COLUMN IF NOT EXISTS refund_required BOOLEAN NOT NULL DEFAULT false;",
+    "ALTER TABLE item_cancellations ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(10, 2) NOT NULL DEFAULT 0;",
+    "ALTER TABLE item_cancellations ADD COLUMN IF NOT EXISTS refund_status TEXT NOT NULL DEFAULT 'pending';",
+    "ALTER TABLE item_cancellations ADD COLUMN IF NOT EXISTS refund_policy TEXT;",
+    "ALTER TABLE item_cancellations ADD COLUMN IF NOT EXISTS previous_quantity INTEGER NOT NULL DEFAULT 1;",
+    "ALTER TABLE item_cancellations ADD COLUMN IF NOT EXISTS new_quantity INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE item_cancellations DROP CONSTRAINT IF EXISTS item_cancellations_refund_status_check;",
+    "ALTER TABLE item_cancellations ADD CONSTRAINT item_cancellations_refund_status_check CHECK (refund_status IN ('pending', 'processed', 'failed', 'not_required'));",
+    "CREATE INDEX IF NOT EXISTS item_cancellations_order_idx ON item_cancellations(order_id, created_at);",
+    """
+    CREATE TABLE IF NOT EXISTS restaurant_settings (
+        id                  SERIAL PRIMARY KEY,
+        restaurant_id       INTEGER NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+        setting_key         TEXT NOT NULL,
+        setting_value       JSONB NOT NULL DEFAULT '{}'::jsonb,
+        updated_by          INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (restaurant_id, setting_key)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS restaurant_settings_rid_idx ON restaurant_settings(restaurant_id);",
+    # Backfill default refund policy for existing restaurants.
+    """
+    INSERT INTO restaurant_settings (restaurant_id, setting_key, setting_value)
+    SELECT r.id, 'refund_policy', '{"mode": "proportional", "prepaid_full_refund": true, "postpaid_no_charge": true}'::jsonb
+    FROM restaurants r
+    ON CONFLICT (restaurant_id, setting_key) DO NOTHING;
+    """,
+    # Enable realtime for new tables.
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'order_items') THEN ALTER PUBLICATION supabase_realtime ADD TABLE public.order_items; END IF; END $$;",
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'item_status_history') THEN ALTER PUBLICATION supabase_realtime ADD TABLE public.item_status_history; END IF; END $$;",
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'item_cancellations') THEN ALTER PUBLICATION supabase_realtime ADD TABLE public.item_cancellations; END IF; END $$;",
 ]
 
 
