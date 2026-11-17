@@ -139,29 +139,16 @@
     grid.innerHTML = '';
     if (!orders.length) { emptyEl.style.display = 'block'; return; }
     emptyEl.style.display = 'none';
-    var groups = {}, order = [];
-    orders.forEach(function (o) {
-      var k = groupKey(o);
-      if (!groups[k]) { groups[k] = { label: groupLabel(o), list: [] }; order.push(k); }
-      groups[k].list.push(o);
+    // Billboard: one flat wall of ticket cards, oldest first, so the most
+    // urgent order is always top-left and every order is visible at once.
+    var sorted = orders.slice().sort(function (a, b) {
+      return new Date(a.created_at) - new Date(b.created_at);
     });
-    order.forEach(function (k) {
-      var g       = groups[k];
-      var section = document.createElement('div');
-      section.className = 'table-group';
-      var head = document.createElement('div');
-      head.className = 'table-head';
-      head.innerHTML = '<h2>' + esc(g.label) + "</h2><span class='count'>" + g.list.length + ' order' + (g.list.length === 1 ? '' : 's') + '</span>';
-      section.appendChild(head);
-      var cards = document.createElement('div');
-      cards.className = 'table-cards';
-      g.list.forEach(function (o) {
-        var cardEl = buildCard(o);
-        cards.appendChild(cardEl);
-        if (notify) notify.onNewOrder(o, cardEl);
-      });
-      section.appendChild(cards);
-      grid.appendChild(section);
+    document.title = '(' + sorted.length + ') DineOS \u2014 Kitchen Display';
+    sorted.forEach(function (o) {
+      var cardEl = buildCard(o);
+      grid.appendChild(cardEl);
+      if (notify) notify.onNewOrder(o, cardEl);
     });
   }
 
@@ -198,7 +185,7 @@
       '</div>' +
       (o.zone ? "<div class='zone'>Zone: " + esc(o.zone) + '</div>' : '') +
       "<div class='items'>" + buildItemsHtml(o) + '</div>' +
-      "<div class='meta'>" + o.currency + Number(o.total || 0).toFixed(2) + ' \xB7 placed ' + new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
+      "<div class='meta'>placed " + new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
 
     var actions = document.createElement('div');
     actions.className = 'actions';
@@ -222,6 +209,28 @@
       if (!ITEM_TERMINAL[it.status]) allTerminal = false;
     });
     if (!isOrderTerminal && !allTerminal) {
+      // Bulk action: advance every item that sits at the earliest active stage.
+      var order_ = ['pending', 'accepted', 'preparing', 'ready'];
+      var stage = -1;
+      orderItems(o).forEach(function (it) {
+        var i = order_.indexOf(it.status || 'pending');
+        if (i >= 0 && (stage < 0 || i < stage)) stage = i;
+      });
+      if (stage >= 0) {
+        var from = order_[stage];
+        var targets = orderItems(o).filter(function (it) { return (it.status || 'pending') === from; });
+        var bulk = document.createElement('button');
+        bulk.className = 'b-advance-all';
+        bulk.textContent = ITEM_NEXT_LABEL[from] + ' all' + (targets.length > 1 ? ' (' + targets.length + ')' : '');
+        bulk.onclick = function () {
+          lock(Promise.all(targets.map(function (it) {
+            return patchItem(o.id, it.id, ITEM_NEXT[from]).then(function () {
+              if (ITEM_NEXT[from] === 'ready' && window.DineNotify) window.DineNotify.onItemReady(o, it);
+            });
+          })));
+        };
+        actions.appendChild(bulk);
+      }
       var cancelAll = document.createElement('button');
       cancelAll.className = 'b-cancel-order';
       cancelAll.textContent = 'Cancel order';
@@ -256,7 +265,7 @@
         controls += "<span class='item-terminal'>" + esc(ITEM_STATUS_LABEL[status]) + '</span>';
       }
       if (isCancellable) {
-        controls += "<button class='item-cancel' data-item-id='" + esc(it.id) + "'>\u2716 Cancel</button>";
+        controls += "<button class='item-cancel' data-item-id='" + esc(it.id) + "' title='Cancel item' aria-label='Cancel item'>\u2716</button>";
       }
       return (
         "<div class='item-row item-st-" + esc(String(status).toLowerCase()) + "' data-item-id='" + esc(it.id) + "'>" +

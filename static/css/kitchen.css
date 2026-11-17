@@ -233,3 +233,72 @@ button.item-advance {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Compact layout (overrides above) =====
+   One line per item, a single bulk action per order, and more orders per
+   screen. Cancel is a small icon so it is not hit by accident. */
+header { padding: 8px 14px; }
+header h1 { font-size: 16px; }
+.grid { padding: 10px 12px; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+.table-head { margin: 0 0 6px; padding-bottom: 4px; }
+.table-head h2 { font-size: 14px; }
+.table-cards { gap: 8px; }
+.card { padding: 8px 10px; gap: 4px; border-radius: 10px; }
+.card.new { border-left-width: 4px; }
+.card.preparing, .card.ready { border-left-width: 4px; }
+.top { gap: 6px; justify-content: flex-start; }
+.ono { font-size: 17px; }
+.top .elapsed-badge { margin-left: auto; font-size: 11px; padding: 2px 8px; }
+.zone, .meta { font-size: 11px; }
+.items { gap: 2px; margin: 2px 0; padding-top: 4px; }
+
+.item-row {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
+  padding: 4px 6px; border-radius: 6px;
+}
+.item-left { grid-column: auto; width: auto; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; row-gap: 0; }
+.item-name { flex: 0 1 auto; white-space: normal; overflow: visible; }
+.item-note { margin-left: 0; max-width: none; white-space: normal; flex-basis: 100%; }
+.item-price { grid-column: auto; margin-left: 0; font-size: 12px; font-weight: 700; color: #8591a0; }
+.item-right { grid-column: auto; gap: 6px; }
+.item-pill { display: none; }
+.item-row.item-st-pending  { border-color: rgba(255,255,255,.08); }
+.item-row.item-st-accepted { border-color: rgba(70,130,180,.35); }
+button.item-advance { min-width: 0; min-height: 0; padding: 4px 10px; font-size: 12px; }
+button.item-cancel { padding: 4px 8px; background: transparent; color: #e4879a; border: 1px solid rgba(228,135,154,.35); }
+button.item-cancel:hover { background: #6b2230; color: #fff; }
+
+.actions { margin-top: 2px; flex-wrap: nowrap; }
+.actions button { padding: 7px 10px; font-size: 13px; }
+.b-advance-all { background: #2e6cf0; flex: 3 1 0; }
+.b-cancel-order { background: transparent; border: 1px solid rgba(228,135,154,.35) !important; color: #e4879a !important; flex: 1 1 0; }
+.b-cancel-order:hover:not(:disabled) { background: #6b2230; color: #fff !important; }
+
+/* ===== Billboard wall (final overrides) =====
+   Flat grid of narrow ticket cards: many orders visible at once, large
+   readable item names, no prices (kitchen does not need them). */
+header { padding: 4px 12px; gap: 8px; }
+header h1 { font-size: 14px; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px; padding: 8px; align-items: start;
+}
+.card { padding: 6px 8px; gap: 3px; border-radius: 8px; }
+.top { flex-wrap: nowrap; gap: 6px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,.10); }
+.ono { font-size: 18px; line-height: 1; }
+.top .badge { font-size: 12px; padding: 2px 7px; }
+.top .order-pill { display: none; }
+.top .elapsed-badge { margin-left: auto; font-size: 11px; padding: 2px 7px; }
+.items { border-top: 0; padding-top: 0; margin: 0; gap: 2px; }
+.item-row { padding: 3px 5px; gap: 6px; }
+.item-qty { font-size: 16px; }
+.item-name { font-size: 15px; font-weight: 600; line-height: 1.15; }
+.item-price { display: none; }
+.meta { font-size: 10px; }
+button.item-advance { padding: 4px 8px; font-size: 11px; white-space: nowrap; }
+button.item-cancel { padding: 3px 6px; font-size: 11px; }
+.actions button { padding: 5px 8px; font-size: 12px; }
+@media (min-width: 1600px) {
+  .grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+}
