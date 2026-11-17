@@ -203,14 +203,15 @@
     var actions = document.createElement('div');
     actions.className = 'actions';
 
-    function lock(promise) {
-      Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = true; });
-      Array.prototype.forEach.call(card.querySelectorAll('button'), function (b) { b.disabled = true; });
+    // Disable only the buttons in `scope` (one line item, or the card-level
+    // actions) so other items stay clickable while the request is in flight.
+    function lock(promise, scope) {
+      var btns = Array.prototype.slice.call((scope || actions).querySelectorAll('button'));
+      btns.forEach(function (b) { b.disabled = true; });
       promise.then(function () {
         poll(); // refresh board; realtime pushes to other devices
       }, function (e) {
-        Array.prototype.forEach.call(actions.querySelectorAll('button'), function (b) { b.disabled = false; });
-        Array.prototype.forEach.call(card.querySelectorAll('button'), function (b) { b.disabled = false; });
+        btns.forEach(function (b) { b.disabled = false; });
         showErr(e);
       });
     }
@@ -248,7 +249,7 @@
       var note = it.instructions ? "<div class='item-note'>\uD83D\uDCDD " + esc(it.instructions) + '</div>' : '';
       var qty = it.quantity != null ? it.quantity : 1;
       var controls = '';
-      var actionLabel = ITEM_NEXT_LABEL[next] || ('Mark ' + next);
+      var actionLabel = ITEM_NEXT_LABEL[status] || ('Mark ' + next);
       if (next) {
         controls += "<button class='item-advance' data-item-id='" + esc(it.id) + "' data-next='" + esc(next) + "' aria-label='" + esc(actionLabel) + "'>" + esc(actionLabel) + '</button>';
       } else if (isTerminal) {
@@ -284,14 +285,14 @@
             window.DineNotify.onItemReady(order, item);
           }
         });
-        lock(promise);
+        lock(promise, btn.closest('.item-row') || btn.parentNode);
       };
     });
     Array.prototype.forEach.call(card.querySelectorAll('button.item-cancel'), function (btn) {
       btn.onclick = function () {
         var itemId = btn.getAttribute('data-item-id');
         if (!confirm('Cancel this item?')) return;
-        lock(cancelItem(orderId, itemId));
+        lock(cancelItem(orderId, itemId), btn.closest('.item-row') || btn.parentNode);
       };
     });
   }
@@ -300,14 +301,19 @@
 
   // ── Data fetch ────────────────────────────────────────────────────────────
   var pollInFlight = false;
+  var pollQueued = false;
   function poll() {
-    if (pollInFlight || document.hidden) return Promise.resolve();
+    if (document.hidden) return Promise.resolve();
+    if (pollInFlight) { pollQueued = true; return Promise.resolve(); }
     pollInFlight = true;
     return sfetch('/orders?restaurant=' + encodeURIComponent(restaurant()) + '&active_only=true')
       .then(function (r) { if (!r.ok) throw new Error('could not load orders'); return r.json(); })
       .then(render)
       .catch(showErr)
-      .then(function () { pollInFlight = false; });
+      .then(function () {
+        pollInFlight = false;
+        if (pollQueued) { pollQueued = false; poll(); }
+      });
   }
 
   setInterval(function () {
@@ -316,25 +322,23 @@
 
   setInterval(tickElapsedBadges, TIMER_MS);
 
+  // Server-relayed realtime pings (see realtime.js).
   function setupRealtime(identity) {
-    if (!window.supabase || !window.RealtimeManager) return Promise.resolve(false);
-    if (!identity || !identity.outletId)               return Promise.resolve(false);
-    return window.RealtimeManager.init({ outletId: identity.outletId })
-      .then(function (ok) {
-        if (!ok) return false;
-        window.RealtimeManager.on('orders', function () { poll(); });
-        realtimeActive = true;
-        return true;
-      })
-      .catch(function () {
-        realtimeActive = false;
-        return false;
-      });
+    if (!window.RealtimeManager || !identity) return Promise.resolve(false);
+    var rm = window.RealtimeManager;
+    rm.on('orders', poll);
+    rm.on('order_items', poll);
+    rm.on('resync', poll);
+    rm.on('live', function (live) { realtimeActive = live; });
+    return rm.init()
+      .then(function (ok) { realtimeActive = ok; return ok; })
+      .catch(function () { realtimeActive = false; return false; });
   }
 
+  // Fallback polling only fires while the realtime relay is down.
   var _fallbackTimer = null;
   function startFallbackPolling() {
-    if (_fallbackTimer || realtimeActive) return;
+    if (_fallbackTimer) return;
     _fallbackTimer = setInterval(function () {
       if (!realtimeActive) poll();
     }, 8000);
@@ -377,9 +381,8 @@
         }
         if (window.DineNotify) window.DineNotify.init('kitchen');
         return poll().then(function () {
-          return setupRealtime(me).then(function (ok) {
-            if (!ok) startFallbackPolling();
-          });
+          startFallbackPolling();
+          return setupRealtime(me);
         });
       })
       .catch(function () { location.href = '/kitchen-login'; });

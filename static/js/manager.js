@@ -17,7 +17,7 @@
   var FALLBACK_POLL_MS  = 8000;
 
   // ── Elapsed-time helpers ──────────────────────────────────────────────────
-  var ACTIVE_STATUSES = { 'new': true, preparing: true, ready: true, partially_served: true };
+  var ACTIVE_STATUSES = { 'new': true, accepted: true, preparing: true, ready: true, partially_served: true };
 
   // Track status per order to detect preparing→ready transitions.
   var _prevStatus  = {};
@@ -583,28 +583,24 @@
   }
 
   // ── Realtime setup ────────────────────────────────────────────────────────
+  // Server-relayed realtime pings (see realtime.js).
   function setupRealtime(identity) {
-    if (!window.supabase || !window.RealtimeManager) return Promise.resolve(false);
-    if (!identity || !identity.outletId)               return Promise.resolve(false);
-
-    return window.RealtimeManager.init({ outletId: identity.outletId })
-      .then(function (ok) {
-        if (!ok) return false;
-
-        // Reload the full order list on any change to orders.
-        // quietLoad() skips re-render when the signature hasn't changed,
-        // so rapid successive inserts do not flicker the UI.
-        window.RealtimeManager.on('orders', function () { quietLoad(); });
-
-        realtimeActive = true;
-        return true;
-      })
+    if (!window.RealtimeManager || !identity) return Promise.resolve(false);
+    var rm = window.RealtimeManager;
+    // quietLoad() skips re-render when the signature hasn't changed,
+    // so rapid successive pings do not flicker the UI.
+    rm.on('orders', quietLoad);
+    rm.on('order_items', quietLoad);
+    rm.on('resync', quietLoad);
+    rm.on('live', function (live) { realtimeActive = live; });
+    return rm.init()
+      .then(function (ok) { realtimeActive = ok; return ok; })
       .catch(function () { return false; });
   }
 
-  // ── Degraded polling (when Supabase not configured) ───────────────────────
+  // ── Degraded polling: only fires while the realtime relay is down ─────────
   function startFallbackPolling() {
-    if (_fallbackTimer || realtimeActive) return;
+    if (_fallbackTimer) return;
     _fallbackTimer = setInterval(function () {
       if (!realtimeActive) quietLoad();
     }, FALLBACK_POLL_MS);
@@ -625,9 +621,8 @@
       })
       .then(function (me) {
         if (window.DineNotify) window.DineNotify.init('manager');
-        return setupRealtime(me).then(function (ok) {
-          if (!ok) startFallbackPolling();
-        });
+        startFallbackPolling();
+        return setupRealtime(me);
       })
       .catch(function () {});
   }

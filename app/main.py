@@ -17,11 +17,13 @@ from app.config import settings
 from app.db import repository as repo
 from app.db.database import dispose_db, init_db
 from app.routes.deps import get_db
+from app.services.realtime_hub import hub as realtime_hub
 from app.routes import (
     ask_routes,
     auth_routes,
     bill_routes,
     crawl_routes,
+    events_routes,
     manager_routes,
     menu_routes,
     order_routes,
@@ -50,7 +52,10 @@ async def lifespan(app: FastAPI):
         # error visible instead of allowing requests against missing tables.
         logger.exception("DB init failed at startup; refusing to start.")
         raise
+    # Server-side Supabase Realtime relay (browsers never talk to Supabase).
+    realtime_hub.start()
     yield
+    await realtime_hub.stop()
     await dispose_db()
 
 
@@ -142,6 +147,7 @@ app.include_router(bill_routes.router)
 app.include_router(pay_routes.router)
 app.include_router(postpaid_routes.router)
 app.include_router(order_routes.router)
+app.include_router(events_routes.router)
 app.include_router(report_routes.router)
 app.include_router(manager_routes.router)
 app.include_router(staff_routes.router)

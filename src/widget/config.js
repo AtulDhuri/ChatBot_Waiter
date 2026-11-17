@@ -50,8 +50,10 @@ export var CONFIG = {
 // Decide whether ?r= looks like an opaque token vs. a legacy slug.
 function looksLikeToken(v) {
   if (!v) return false;
-  if (v.length < 16) return false; // demo slugs are short
-  return /[A-Z_]/.test(v) || v.length >= 20;
+  // QR tokens are opaque URL-safe values. Accept lowercase-only tokens too;
+  // relying on uppercase characters misclassified some valid QR tokens as
+  // restaurant slugs and showed the legacy DineOS welcome screen.
+  return v.length >= 16 && /^[A-Za-z0-9_-]+$/.test(v);
 }
 
 export var TAKEAWAY_MODE = urlParam("takeaway") === "1";

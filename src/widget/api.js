@@ -45,6 +45,7 @@ export function startSession(label) {
         if (ui.titleEl) ui.titleEl.firstChild.textContent = CONFIG.title;
       }
       saveSession();
+      prefetchMenu();
       return data;
     });
   }
@@ -89,10 +90,14 @@ export function resolveQrToken() {
       if (!r.ok) {
         return r.json().then(
           function (e) {
-            throw new Error((e && e.detail) || "invalid code");
+            var err = new Error((e && e.detail) || "invalid code");
+            err.status = r.status;
+            throw err;
           },
           function () {
-            throw new Error("invalid code");
+            var err = new Error("invalid code");
+            err.status = r.status;
+            throw err;
           }
         );
       }
@@ -124,6 +129,7 @@ export function resolveQrToken() {
       }
       updateCartBadge();
       resumeStatusPollingIfNeeded();
+      prefetchMenu();
       _qrResolving = null;
       return data;
     })
@@ -132,9 +138,13 @@ export function resolveQrToken() {
       if (ui.panel && ui.body) {
         ui.footer.innerHTML = "";
         ui.body.innerHTML = "";
+        // 404 = genuinely invalid/expired token; anything else is a network
+        // or server error — show a different message so it's not confusing.
+        var isInvalidToken = err && (err.status === 404 || (err.message && err.message.indexOf("invalid code") !== -1));
         addMessage(
-          "This code isn't valid anymore. Please scan the QR code on your " +
-            "table again.",
+          isInvalidToken
+            ? "This QR code isn't valid anymore. Please scan the QR code on your table again."
+            : "Couldn't connect to the server. Please check your connection and try refreshing the page.",
           "bot"
         );
       }
@@ -216,6 +226,12 @@ export function getJson(urlFn, _retried) {
   });
 }
 
+var _menuRequest = null;
+var _menuCacheKey = null;
+var _menuCacheAt = 0;
+var _menuCacheData = null;
+var MENU_CACHE_MS = 60000;
+
 export function fetchMenu() {
   var url;
   var slug = String(LEGACY_SLUG || "").trim();
@@ -228,7 +244,14 @@ export function fetchMenu() {
   } else {
     return Promise.resolve({ items: [], categories: {} });
   }
-  return fetch(api(url))
+  var cacheKey = state.token ? "session:" + state.token : "slug:" + slug;
+  var now = Date.now();
+  if (_menuRequest && _menuCacheKey === cacheKey) return _menuRequest;
+  if (_menuCacheKey === cacheKey && now - _menuCacheAt < MENU_CACHE_MS && state.menu && state.menu.length) {
+    return Promise.resolve(_menuCacheData);
+  }
+  _menuCacheKey = cacheKey;
+  _menuRequest = fetch(api(url))
     .then(function (r) {
       if (!r.ok) {
         return r.json().catch(function () { return {}; }).then(function (error) {
@@ -241,8 +264,49 @@ export function fetchMenu() {
       if (data && data.items) state.menu = data.items;
       if (data && data.restaurant_name)
         applyRestaurantName(data.restaurant_name);
+      _menuCacheData = data;
+      _menuCacheAt = Date.now();
       return data;
+    })
+    .then(function (data) {
+      _menuRequest = null;
+      return data;
+    }, function (error) {
+      _menuRequest = null;
+      throw error;
     });
+  return _menuRequest;
+}
+
+export function invalidateMenuCache() {
+  _menuCacheAt = 0;
+  _menuCacheData = null;
+}
+
+function currentMenuCacheKey() {
+  if (state.token) return "session:" + state.token;
+  var slug = String(LEGACY_SLUG || "").trim();
+  return slug ? "slug:" + slug : null;
+}
+
+// Last menu fetched for the current session/slug, even if past MENU_CACHE_MS.
+// Lets the Menu button render instantly while a refresh runs in the background.
+export function getCachedMenu() {
+  var key = currentMenuCacheKey();
+  if (!key || key !== _menuCacheKey || !_menuCacheData) return null;
+  return _menuCacheData;
+}
+
+export function isMenuCacheFresh() {
+  return !!getCachedMenu() && Date.now() - _menuCacheAt < MENU_CACHE_MS;
+}
+
+// Warm the menu cache without blocking the UI (called right after the QR
+// session is ready so the first Menu tap doesn't wait on the network).
+export function prefetchMenu() {
+  try {
+    fetchMenu().catch(function () {});
+  } catch (e) {}
 }
 
 // Set the restaurant's display name everywhere it's shown, only when it differs.

@@ -429,6 +429,56 @@ _SCHEMA_STATEMENTS = [
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'order_items') THEN ALTER PUBLICATION supabase_realtime ADD TABLE public.order_items; END IF; END $$;",
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'item_status_history') THEN ALTER PUBLICATION supabase_realtime ADD TABLE public.item_status_history; END IF; END $$;",
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'item_cancellations') THEN ALTER PUBLICATION supabase_realtime ADD TABLE public.item_cancellations; END IF; END $$;",
+    # ---- Row-level security (Supabase Data API / Realtime lockdown) --------
+    # The backend connects as a BYPASSRLS role, so none of this affects it.
+    # Browsers never receive any Supabase URL/key/token, and anyone who finds
+    # the anon key anyway must see nothing:
+    #   1. RLS on for every public table, all anon/authenticated grants revoked,
+    #      no policies for those roles.
+    #   2. Only service_role (used by the server-side realtime relay) may read
+    #      the realtime tables.
+    # Runs on every boot so tables added later are locked down too. Skipped
+    # on plain Postgres (no Supabase roles / auth.jwt()).
+    """
+    DO $$
+    DECLARE t text;
+    BEGIN
+      FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+      END LOOP;
+
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+         OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated')
+         OR to_regprocedure('auth.jwt()') IS NULL THEN
+        RETURN;
+      END IF;
+
+      FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+        EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated', t);
+      END LOOP;
+      EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated';
+      EXECUTE 'REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated';
+
+      -- Browsers never query Supabase (realtime is relayed by the server via
+      -- /events/*), so anon/authenticated get no policies at all. Remove any
+      -- policies left by earlier versions.
+      FOR t IN SELECT tablename FROM pg_policies
+               WHERE schemaname = 'public'
+                 AND policyname IN ('dineos_staff_select', 'dineos_customer_select') LOOP
+        EXECUTE format('DROP POLICY IF EXISTS dineos_staff_select ON public.%I', t);
+        EXECUTE format('DROP POLICY IF EXISTS dineos_customer_select ON public.%I', t);
+      END LOOP;
+
+      -- The server-side relay authenticates as service_role (BYPASSRLS).
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+        FOREACH t IN ARRAY ARRAY['orders', 'order_items', 'menu_items'] LOOP
+          IF to_regclass('public.' || t) IS NOT NULL THEN
+            EXECUTE format('GRANT SELECT ON public.%I TO service_role', t);
+          END IF;
+        END LOOP;
+      END IF;
+    END $$;
+    """,
 ]
 
 

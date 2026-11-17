@@ -304,19 +304,17 @@ async def clear_menu_items(session: AsyncSession, restaurant_id: int) -> None:
 async def insert_menu_items(
     session: AsyncSession, restaurant_id: int, items: List[Dict[str, Any]]
 ) -> int:
+    if not items:
+        return 0
+    # Build all parameter dicts first, then execute in a single round-trip
+    # via executemany.  The old per-item loop fired one INSERT per row,
+    # meaning a 100-item menu paid 100 Supabase round-trips.  executemany
+    # batches them into one network call while keeping named-parameter safety.
+    params = []
     for it in items:
         zone_prices = it.get("zone_prices") or {}
         available = it.get("available")
-        await session.execute(
-            text(
-                """
-                INSERT INTO menu_items
-                    (restaurant_id, name, description, category, price,
-                     currency, zone_prices, available)
-                VALUES (:rid, :name, :description, :category, :price,
-                        :currency, CAST(:zone_prices AS JSONB), :available)
-                """
-            ),
+        params.append(
             {
                 "rid": restaurant_id,
                 "name": it.get("name"),
@@ -327,8 +325,20 @@ async def insert_menu_items(
                 "zone_prices": json.dumps(zone_prices),
                 # Default to available unless explicitly set False.
                 "available": False if available is False else True,
-            },
+            }
         )
+    await session.execute(
+        text(
+            """
+            INSERT INTO menu_items
+                (restaurant_id, name, description, category, price,
+                 currency, zone_prices, available)
+            VALUES (:rid, :name, :description, :category, :price,
+                    :currency, CAST(:zone_prices AS JSONB), :available)
+            """
+        ),
+        params,
+    )
     # Invalidate so the next read picks up the freshly inserted items.
     invalidate_menu_cache(restaurant_id)
     return len(items)
@@ -781,6 +791,7 @@ TERMINAL_ITEM_STATUSES = (ITEM_SERVED, ITEM_CANCELLED)
 
 # Order-level statuses (auto-derived from item statuses).
 ORDER_NEW          = "new"
+ORDER_ACCEPTED     = "accepted"
 ORDER_PREPARING    = "preparing"
 ORDER_READY        = "ready"
 ORDER_PARTIAL      = "partially_served"
@@ -788,8 +799,8 @@ ORDER_SERVED       = "served"
 ORDER_CANCELLED    = "cancelled"
 
 # Active (kitchen-relevant) order statuses vs terminal ones.
-ACTIVE_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served")
-ALL_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served", "served", "cancelled")
+ACTIVE_ORDER_STATUSES = ("new", "accepted", "preparing", "ready", "partially_served")
+ALL_ORDER_STATUSES = ("new", "accepted", "preparing", "ready", "partially_served", "served", "cancelled")
 
 # Items that still require kitchen work (not served, not cancelled).
 KITCHEN_ACTIVE_ITEM_STATUSES = (ITEM_PENDING, ITEM_ACCEPTED, ITEM_PREPARING, ITEM_READY)
@@ -818,19 +829,30 @@ def _compute_order_status(statuses: List[str]) -> str:
     if not non_cancelled:
         return ORDER_CANCELLED
 
+    if all(s == ITEM_SERVED for s in non_cancelled):
+        return ORDER_SERVED
+
     if any(s == ITEM_PREPARING for s in non_cancelled):
         return ORDER_PREPARING
 
-    if any(s == ITEM_READY for s in non_cancelled):
+    # Items still awaiting kitchen/service (neither served nor cancelled).
+    remaining = [s for s in non_cancelled if s != ITEM_SERVED]
+    if all(s == ITEM_READY for s in remaining):
         if any(s == ITEM_SERVED for s in non_cancelled):
             return ORDER_PARTIAL
         return ORDER_READY
 
-    if all(s == ITEM_SERVED for s in non_cancelled):
-        return ORDER_SERVED
+    if any(s == ITEM_READY for s in remaining) and not any(
+        s == ITEM_SERVED for s in non_cancelled
+    ):
+        # Some dishes are ready while others are still queued: cooking is underway.
+        return ORDER_PREPARING
 
     if any(s == ITEM_SERVED for s in non_cancelled):
         return ORDER_PARTIAL
+
+    if any(s == ITEM_ACCEPTED for s in non_cancelled):
+        return ORDER_ACCEPTED
 
     return ORDER_NEW
 
@@ -1465,8 +1487,8 @@ async def cancel_all_order_items(
 # ---- Orders --------------------------------------------------------------
 
 # Active (kitchen-relevant) statuses vs terminal ones.
-ACTIVE_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served")
-ALL_ORDER_STATUSES = ("new", "preparing", "ready", "partially_served", "served", "cancelled")
+ACTIVE_ORDER_STATUSES = ("new", "accepted", "preparing", "ready", "partially_served")
+ALL_ORDER_STATUSES = ("new", "accepted", "preparing", "ready", "partially_served", "served", "cancelled")
 
 
 async def _next_order_no(session: AsyncSession, restaurant_id: int) -> str:
@@ -1593,7 +1615,14 @@ async def list_orders(
             k = f"s{i}"
             params[k] = s
             keys.append(f":{k}")
-        where += f" AND status IN ({', '.join(keys)})"
+        # The stored status can be stale, so also pick up any order that still
+        # has a non-terminal line item; the final filter below uses the status
+        # derived from the line items.
+        where += (
+            f" AND (status IN ({', '.join(keys)}) OR EXISTS ("
+            "SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id "
+            "AND oi.status NOT IN ('served', 'cancelled')))"
+        )
     rows = (
         await session.execute(
             text(
@@ -1610,8 +1639,17 @@ async def list_orders(
         )
     ).mappings().all()
     orders = [dict(r) for r in rows]
+    items_by_order = await get_order_items_for_orders(
+        session, [order["id"] for order in orders]
+    )
     for order in orders:
-        order["order_items"] = await get_order_items(session, order["id"])
+        order["order_items"] = items_by_order.get(order["id"], [])
+        if order["order_items"]:
+            order["status"] = _compute_order_status(
+                [it["status"] for it in order["order_items"]]
+            )
+    if statuses:
+        orders = [o for o in orders if o["status"] in statuses]
     return orders
 
 
@@ -1655,8 +1693,11 @@ async def list_manager_orders(
         )
     ).mappings().all()
     orders = [dict(r) for r in rows]
+    items_by_order = await get_order_items_for_orders(
+        session, [order["id"] for order in orders]
+    )
     for order in orders:
-        lifecycle_items = await get_order_items(session, order["id"])
+        lifecycle_items = items_by_order.get(order["id"], [])
         if lifecycle_items:
             order["items"] = [
                 {
@@ -2042,3 +2083,31 @@ async def analytics_dashboard(
 async def list_restaurants(session: AsyncSession) -> List[Dict[str, Any]]:
     rows = (await session.execute(text("SELECT slug, name FROM restaurants ORDER BY name, slug"))).mappings().all()
     return [dict(r) for r in rows]
+
+
+async def get_order_items_for_orders(
+    session: AsyncSession, order_ids: List[int]
+) -> Dict[int, List[Dict[str, Any]]]:
+    """Load lifecycle rows for multiple orders with one query."""
+    if not order_ids:
+        return {}
+    params: Dict[str, Any] = {}
+    placeholders = []
+    for index, order_id in enumerate(order_ids):
+        key = f"oid{index}"
+        params[key] = order_id
+        placeholders.append(f":{key}")
+    query = f"""
+        SELECT id, order_id, restaurant_id, menu_item_id, name, price,
+               quantity, line_total, instructions, status,
+               previous_status, cancelled_at, cancelled_by,
+               cancel_reason, created_at, updated_at
+        FROM order_items
+        WHERE order_id IN ({", ".join(placeholders)})
+        ORDER BY created_at ASC, id ASC
+    """
+    rows = (await session.execute(text(query), params)).mappings().all()
+    grouped: Dict[int, List[Dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(row["order_id"], []).append(dict(row))
+    return grouped

@@ -137,7 +137,11 @@
     });
   }
 
-  document.getElementById('search').addEventListener('input', render);
+  var _searchTimer = null;
+  document.getElementById('search').addEventListener('input', function () {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(render, 150);
+  });
   document.getElementById('filter').addEventListener('change', render);
   document.getElementById('reloadBtn').onclick  = load;
   document.getElementById('tokenBtn').onclick   = function () { promptToken(true); };

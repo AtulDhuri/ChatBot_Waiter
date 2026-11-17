@@ -36,6 +36,7 @@ function boot() {
   if (window.WAITER_CONFIG && window.WAITER_CONFIG.name && (!LEGACY_SLUG || LEGACY_SLUG === "demo")) {
     CONFIG.title = window.WAITER_CONFIG.name;
   }
+  if (IS_TOKEN && !TAKEAWAY_MODE) CONFIG.title = "Loading…";
   injectStyles();
   loadSession();
   // A takeaway QR is a shared entry point, not a resumable table session.

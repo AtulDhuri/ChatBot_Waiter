@@ -1,17 +1,18 @@
 // Customer order-status tracking. The customer sees ONLY their own session's
 // orders (server-enforced via the session token). Statuses flow
-// Customer status steps: Placed -> Preparing -> Ready -> Served.
+// Customer status steps: Placed -> Accepted -> Preparing -> Ready -> Served.
 //
 // Realtime strategy:
-//  - If the page loaded with @supabase/supabase-js present on the window AND
-//    the backend returns a realtime config from /session-realtime-token, we
-//    subscribe to postgres_changes on the `orders` table filtered to this
-//    session_id. Each push triggers pollStatusOnce() for a fresh server read.
-//  - If Supabase is not available or the subscription fails, we fall back
-//    to one request every 45 seconds using a non-overlapping timeout.
-//  - Only ONE subscription and ONE fallback timer are ever live at a time.
+//  - The browser never talks to the database provider. The backend relays
+//    database change events as content-free pings over Server-Sent Events at
+//    /events/session (this session's orders + the menu only). Each ping
+//    triggers pollStatusOnce() for a fresh, authoritative server read.
+//  - While the relay is unavailable we fall back to one request every 45 s
+//    using a non-overlapping timeout.
+//  - Only ONE stream and ONE fallback timer are ever live at a time.
 
-import { api, money } from "./config.js";
+import { api, money, DEVICE_ID } from "./config.js";
+import { invalidateMenuCache, fetchMenu } from "./api.js";
 import { state, ui } from "./state.js";
 import { addMessage, el, _guard } from "./dom.js";
 import { getJson } from "./api.js";
@@ -19,16 +20,13 @@ import { endLocalSession } from "./cart.js";
 import { fetchCancelItem } from "./api.js";
 
 var STATUS_FALLBACK_MS = 45000; // backup only; Realtime is primary
-var STATUS_STEPS   = ["Placed", "Preparing", "Ready", "Served"];
+var STATUS_STEPS   = ["Placed", "Accepted", "Preparing", "Ready", "Served"];
 
 // Item statuses the customer may cancel.
 var CANCELLABLE_ITEM = { pending: true, accepted: true };
 
-// Realtime changes are filtered by the server-resolved internal session ID,
-// not the signed token. Orders store the internal session ID.
-var _rtClient  = null;  // Supabase client instance
-var _rtChannel = null;  // active channel
-var _rtActive  = false; // true when channel is SUBSCRIBED
+var _es         = null;  // EventSource to /events/session
+var _rtActive   = false; // true while the server relay reports live
 var _rtStarting = false;
 
 function statusClass(s) {
@@ -152,9 +150,12 @@ export function renderStatus(data, moveToBottom) {
   }
 
 
+var _statusInFlight = null;
+
 export function pollStatusOnce(moveToBottom) {
   if (!state.token) return Promise.resolve();
-  return getJson(function () {
+  if (_statusInFlight) return _statusInFlight;
+  _statusInFlight = getJson(function () {
     return "/my-orders?session_id=" + encodeURIComponent(state.token);
   })
     .then(function (data) {
@@ -174,7 +175,12 @@ export function pollStatusOnce(moveToBottom) {
     })
     .catch(function () {
       // Transient error — keep trying; the next tick may succeed.
+    })
+    .then(function (result) {
+      _statusInFlight = null;
+      return result;
     });
+  return _statusInFlight;
 }
 
 export function showOrders() {
@@ -183,101 +189,67 @@ export function showOrders() {
   });
 }
 
-// ── Realtime subscription ─────────────────────────────────────────────────
-// Tries to subscribe to postgres_changes on the orders table, filtered
-// to this session's restaurant. Each push triggers a server read so the
-// customer always sees authoritative data (not just the Supabase payload,
-// which omits the computed customer-safe fields the server adds).
+// ── Realtime subscription (server-relayed) ────────────────────────────────
+
+function _onMenuChanged() {
+  invalidateMenuCache();
+  fetchMenu().then(function () {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("dineos:menu-updated"));
+    }
+  }).catch(function () {});
+}
 
 function _setupRealtime() {
-  if (_rtChannel || !state.token || typeof window === "undefined") return;
-  if (!window.supabase) return; // Supabase JS not loaded in this embed
+  if (_es || !state.token) return;
+  if (typeof EventSource === "undefined") {
+    _rtStarting = false;
+    _ensureFallbackPolling();
+    return;
+  }
 
-  fetch(api("/auth/session-realtime-token?session_id=" + encodeURIComponent(state.token)))
-    .then(function (r) {
-      if (!r.ok) throw new Error("not configured");
-      return r.json();
-    })
-    .then(function (cfg) {
-      if (!cfg.url || !cfg.anonKey || !cfg.restaurantId || !cfg.sessionId) {
-        _rtStarting = false;
-        _ensureFallbackPolling();
-        return;
-      }
+  _es = new EventSource(api(
+    "/events/session?session_id=" + encodeURIComponent(state.token) +
+    "&device=" + encodeURIComponent(DEVICE_ID)
+  ));
 
-      _rtClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
-        realtime: { heartbeatIntervalMs: 30000 },
-        // No staff JWT for customer channels — they use the anon key plus RLS.
-      });
-
-      // Channel name is scoped to this specific session — one customer,
-      // one channel, zero cross-session bleed.
-      var channelName = "customer-session-" + cfg.restaurantId + "-" + state.token.slice(0, 12);
-      _rtChannel = _rtClient.channel(channelName);
-
-      // Filter to this session's orders only. `session_id` is a column on
-      // the orders table that was set when the order was placed.
-      // This means the channel only fires when THIS customer's orders change,
-      // not every other table in the restaurant.
-      _rtChannel.on(
-        "postgres_changes",
-        {
-          event:  "UPDATE",  // only status/payment changes matter for the tracker
-          schema: "public",
-          table:  "orders",
-          filter: "session_id=eq." + cfg.sessionId,
-        },
-        function () {
-          // Re-fetch from server — the server maps raw DB status to the
-          // customer-safe labels (Placed / Preparing / Served).
-          pollStatusOnce();
-        }
-      );
-
-      // Also catch INSERT in case the first order of a session arrives
-      // after the channel is already open.
-      _rtChannel.on(
-        "postgres_changes",
-        {
-          event:  "INSERT",
-          schema: "public",
-          table:  "orders",
-          filter: "session_id=eq." + cfg.sessionId,
-        },
-        function () { pollStatusOnce(); }
-      );
-
-      _rtChannel.subscribe(function (status) {
-        if (status === "SUBSCRIBED") {
-          _rtActive = true;
-          _rtStarting = false;
-          // Realtime is authoritative. Stop backup scheduling and make one
-          // initial read to render the current state.
-          _stopFallbackPolling();
-          pollStatusOnce();
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          _rtActive = false;
-          _rtStarting = false;
-          _rtChannel = null;
-          // Realtime failed; use the slow backup only.
-          _ensureFallbackPolling();
-        }
-      });
-    })
-    .catch(function () {
-      _rtStarting = false;
-      // Supabase is unavailable or not configured. Use the slow backup.
+  _es.addEventListener("live", function (e) {
+    var live = false;
+    try { live = !!JSON.parse(e.data).live; } catch (err) {}
+    _rtStarting = false;
+    if (live) {
+      _rtActive = true;
+      _stopFallbackPolling();
+      pollStatusOnce(); // resync on every (re)connect
+    } else {
+      _rtActive = false;
       _ensureFallbackPolling();
-    });
+    }
+  });
+
+  _es.addEventListener("change", function (e) {
+    var d = {};
+    try { d = JSON.parse(e.data); } catch (err) { return; }
+    if (d.table === "menu_items") _onMenuChanged();
+    else pollStatusOnce();
+  });
+
+  _es.onerror = function () {
+    // EventSource reconnects by itself; poll slowly until it is back. If the
+    // server rejected the stream (e.g. session ended) it stays CLOSED.
+    _rtActive = false;
+    _rtStarting = false;
+    if (_es && _es.readyState === 2) _es = null;
+    _ensureFallbackPolling();
+  };
 }
 
 function _teardownRealtime() {
-  if (_rtChannel) {
-    try { _rtChannel.unsubscribe(); } catch (e) {}
-    _rtChannel = null;
+  if (_es) {
+    try { _es.close(); } catch (e) {}
+    _es = null;
   }
-  _rtClient  = null;
-  _rtActive  = false;
+  _rtActive = false;
   _rtStarting = false;
 }
 
@@ -307,14 +279,9 @@ function _stopFallbackPolling() {
 // ── Public API ────────────────────────────────────────────────────────────
 
 export function startStatusPolling() {
-  if (!state.token || _rtActive || _rtStarting || _rtChannel) return;
+  if (!state.token || _rtActive || _rtStarting || _es) return;
   _rtStarting = true;
-  if (typeof window === "undefined" || !window.supabase) {
-    _rtStarting = false;
-    _ensureFallbackPolling();
-    return;
-  }
-  // Realtime is primary. The backup starts only after connection failure.
+  // Realtime is primary. The backup starts only while the relay is down.
   _setupRealtime();
 }
 
@@ -326,7 +293,7 @@ export function stopStatusPolling() {
 export function resumeStatusPollingIfNeeded() {
   if (!state.token) return;
   // Realtime pushes changes; focus/visibility must not trigger a read.
-  if (_rtActive || _rtStarting || _rtChannel) return;
+  if (_rtActive || _rtStarting || _es) return;
   if (state.statusTimer) return;
   startStatusPolling();
 }

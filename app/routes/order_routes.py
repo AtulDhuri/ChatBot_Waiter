@@ -47,10 +47,11 @@ from app.services.payment_modes import is_postpaid
 
 
 # Map internal kitchen statuses to the customer-facing label set
-# (Placed -> Preparing -> Ready -> Served). Payment is tracked separately and never
+# (Placed -> Accepted -> Preparing -> Ready -> Served). Payment is tracked separately and never
 # appears as a kitchen-progress status.
 _CUSTOMER_STATUS = {
     "new": "Placed",
+    "accepted": "Accepted",
     "preparing": "Preparing",
     "ready": "Ready",
     "partially_served": "Partially Served",
@@ -212,13 +213,11 @@ async def my_orders(
         await repo.end_session(db, row["id"])
 
     enriched: List[MyOrder] = []
+    lifecycle_by_order = await repo.get_order_items_for_orders(
+        db, [o["id"] for o in orders]
+    )
     for o in orders:
-        order_items = None
-        try:
-            full = await repo.get_order(db, o["id"])
-            order_items = full.get("order_items") if full else None
-        except Exception:
-            order_items = None
+        order_items = lifecycle_by_order.get(o["id"], [])
         internal_status = (
             repo._compute_order_status([it["status"] for it in order_items])
             if order_items

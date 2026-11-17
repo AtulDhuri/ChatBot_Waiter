@@ -55,18 +55,6 @@ def create_reset_token() -> tuple[str, str]:
     raw = secrets.token_urlsafe(32)
     return raw, hashlib.sha256(raw.encode()).hexdigest()
 
-def issue_realtime_token(*, user_id: int, tenant_id: int, outlet_id: int, role: str, ttl_seconds: int = 300) -> str:
-    """Issue a short-lived JWT understood by Supabase Realtime RLS."""
-    now = int(time.time())
-    payload = {"sub": str(user_id), "role": "authenticated", "user_id": user_id,
-               "tenant_id": tenant_id, "outlet_id": outlet_id, "app_role": role,
-               "iat": now, "exp": now + ttl_seconds}
-    header = {"alg": "HS256", "typ": "JWT"}
-    encoded = f"{_b64(json.dumps(header, separators=(',', ':')).encode())}.{_b64(json.dumps(payload, separators=(',', ':')).encode())}"
-    signature = hmac.new(settings.supabase_jwt_secret.encode(), encoded.encode(), hashlib.sha256).digest()
-    return f"{encoded}.{_b64(signature)}"
-
-
 def decode_token(token: str) -> dict[str, Any]:
     try:
         head, body, signature = token.split(".", 2)

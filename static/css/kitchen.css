@@ -172,6 +172,7 @@ button.item-advance:disabled, button.item-cancel:disabled { opacity: 0.5; cursor
   text-transform: uppercase; letter-spacing: 0.3px;
 }
 .order-st-new          { background: #7f1d1d; color: #fca5a5; }
+.order-st-accepted     { background: #1e3a8a; color: #93c5fd; }
 .order-st-preparing    { background: #78350f; color: #fcd34d; }
 .order-st-ready        { background: #052e16; color: #86efac; }
 .order-st-partially_served { background: #5b21b6; color: #d8b4fe; }

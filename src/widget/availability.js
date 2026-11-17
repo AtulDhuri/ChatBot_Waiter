@@ -6,7 +6,7 @@
 import { money } from "./config.js";
 import { state, saveSession } from "./state.js";
 import { addMessage } from "./dom.js";
-import { fetchMenu } from "./api.js";
+import { fetchMenu, invalidateMenuCache } from "./api.js";
 import { activeCart, setActiveCart, reconcileDropped } from "./cart.js";
 
 var _availTimer = null;
@@ -141,4 +141,12 @@ export function syncNowIfVisible() {
 // Exposed so boot's pagehide handler can clear the pending poll timer.
 export function clearAvailabilityTimer() {
   clearTimeout(_availTimer);
+}
+
+// Realtime menu changes bypass the normal polling interval.
+if (typeof window !== "undefined") {
+  window.addEventListener("dineos:menu-updated", function () {
+    invalidateMenuCache();
+    syncAvailability();
+  });
 }

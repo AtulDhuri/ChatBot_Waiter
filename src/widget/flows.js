@@ -11,6 +11,8 @@ import {
   fetchPostpaidBill,
   fetchPostpaidPay,
   fetchMenu,
+  getCachedMenu,
+  isMenuCacheFresh,
   askQuestion,
   parseOrderServer,
   ensureMenu,
@@ -169,7 +171,13 @@ export function menuItemRow(item) {
 
 export function showMenu() {
   addMessage("Here's our menu:", "bot");
-  return fetchMenu()
+  // Render the prefetched menu instantly; refresh a stale copy in the
+  // background so the next open (and availability sync) sees fresh data.
+  var cached = getCachedMenu();
+  if (cached && !isMenuCacheFresh()) {
+    fetchMenu().catch(function () {});
+  }
+  return (cached ? Promise.resolve(cached) : fetchMenu())
     .then(function (data) {
       if (!data.items || !data.items.length) {
         addMessage("The menu isn't loaded yet. Please check back soon.", "bot");
@@ -204,7 +212,7 @@ export function showMenu() {
                 chipEls[k].className =
                   "wa-chip" + (k === key ? " wa-chip-on" : "");
               });
-              renderList(search.value);
+              filterList(search.value);
             },
           },
           [label]
@@ -221,41 +229,65 @@ export function showMenu() {
       }
 
       var count = el("div", { class: "wa-mi-desc wa-menu-count" }, []);
+      var noMatch = el("div", { class: "wa-mi-desc", style: "display:none" }, [""]);
       var results = el("div", {});
       wrap.appendChild(search);
       if (cats.length > 1) wrap.appendChild(chipBar);
       wrap.appendChild(count);
       wrap.appendChild(results);
+      wrap.appendChild(noMatch);
 
-      function renderList(q) {
-        q = (q || "").trim().toLowerCase();
-        results.innerHTML = "";
-        var shown = 0;
-        cats.forEach(function (cat) {
-          if (activeCat !== "all" && cat !== activeCat) return;
-          var matches = data.categories[cat].filter(function (it) {
-            if (!q) return true;
-            return (
-              (it.name || "").toLowerCase().indexOf(q) !== -1 ||
-              (it.description || "").toLowerCase().indexOf(q) !== -1 ||
-              (it.category || "").toLowerCase().indexOf(q) !== -1
-            );
-          });
-          if (!matches.length) return;
-          results.appendChild(el("div", { class: "wa-cat" }, [cat]));
-          matches.forEach(function (item) {
-            results.appendChild(menuItemRow(item));
-            shown++;
+      // Build all item rows once and keep a lightweight index for fast filtering.
+      // Each entry: { item, catHeader, row, nameLower, descLower, catLower }
+      var allRows = [];
+      cats.forEach(function (cat) {
+        var catHeader = el("div", { class: "wa-cat" }, [cat]);
+        results.appendChild(catHeader);
+        (data.categories[cat] || []).forEach(function (item) {
+          var row = menuItemRow(item);
+          results.appendChild(row);
+          allRows.push({
+            item: item,
+            catHeader: catHeader,
+            row: row,
+            nameLower: (item.name || "").toLowerCase(),
+            descLower: (item.description || "").toLowerCase(),
+            catLower: (item.category || "").toLowerCase(),
+            cat: cat,
           });
         });
-        if (!shown) {
-          results.appendChild(
-            el("div", { class: "wa-mi-desc" }, [
-              q
-                ? 'No dishes match "' + q + '".'
-                : "No dishes in this category.",
-            ])
-          );
+      });
+
+      // Filter by toggling display — no DOM creation on each keystroke.
+      function filterList(q) {
+        q = (q || "").trim().toLowerCase();
+        var shown = 0;
+        // Track which category headers have at least one visible item.
+        var catVisible = {};
+        allRows.forEach(function (entry) {
+          var catMatch = activeCat === "all" || entry.cat === activeCat;
+          var textMatch = !q ||
+            entry.nameLower.indexOf(q) !== -1 ||
+            entry.descLower.indexOf(q) !== -1 ||
+            entry.catLower.indexOf(q) !== -1;
+          var visible = catMatch && textMatch;
+          entry.row.style.display = visible ? "" : "none";
+          if (visible) {
+            shown++;
+            catVisible[entry.cat] = true;
+          }
+        });
+        // Show/hide category headers based on whether any item in them is visible.
+        allRows.forEach(function (entry) {
+          entry.catHeader.style.display = catVisible[entry.cat] ? "" : "none";
+        });
+        if (shown) {
+          noMatch.style.display = "none";
+        } else {
+          noMatch.firstChild.textContent = q
+            ? 'No dishes match "' + q + '".'
+            : "No dishes in this category.";
+          noMatch.style.display = "";
         }
         count.textContent =
           shown +
@@ -268,15 +300,27 @@ export function showMenu() {
       search.addEventListener("input", function () {
         clearTimeout(_t);
         _t = setTimeout(function () {
-          renderList(search.value);
-        }, 120);
+          filterList(search.value);
+        }, 180);
       });
 
-      renderList("");
+      filterList("");
       addMessage(null, "bot", wrap);
     })
     .catch(function (error) {
-      addMessage("Sorry, I couldn't load the menu right now. " + (error && error.message ? error.message : "Please check the restaurant link."), "bot");
+      var msg = error && error.message ? error.message : "";
+      // Surface actionable guidance for the two most common local dev failures.
+      if (msg.indexOf("No menu found") !== -1 || msg.indexOf("404") !== -1) {
+        addMessage(
+          "No menu is set up yet. Upload a menu from the admin panel (Settings → Menu) to get started.",
+          "bot"
+        );
+      } else {
+        addMessage(
+          "Sorry, I couldn't load the menu right now. " + (msg || "Please check the restaurant link."),
+          "bot"
+        );
+      }
     });
 }
 

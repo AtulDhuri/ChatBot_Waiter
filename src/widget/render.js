@@ -206,10 +206,9 @@ export function buildPanel() {
   } else if (IS_TOKEN && TAKEAWAY_MODE) {
     askIdentifier("takeaway");
   } else if (IS_TOKEN) {
-    renderChat();
-    ui.input.disabled = true;
-    addMessage("One moment — getting your table ready…", "bot");
-    resolveQrToken().catch(function () {});
+    ui.footer.innerHTML = "";
+    ui.body.innerHTML = "";
+    addMessage("Loading your table…", "bot");
   } else if (TAKEAWAY_MODE) {
     askIdentifier("takeaway");
   } else {
