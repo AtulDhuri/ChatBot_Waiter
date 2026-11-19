@@ -166,6 +166,7 @@ async def place_order(
             "line_total": float(it["line_total"]),
             "status": it["status"],
             "instructions": it.get("instructions") or "",
+            "serve_order": it.get("serve_order"),
         }
         for it in (order.get("order_items") or [])
     ]
@@ -665,6 +666,7 @@ def _to_order_with_items(r: dict) -> OrderWithItems:
                 "quantity": it["quantity"],
                 "line_total": float(it["line_total"]),
                 "instructions": it.get("instructions") or "",
+                "serve_order": it.get("serve_order"),
                 "status": it["status"],
                 "previous_status": it.get("previous_status"),
                 "cancelled_at": it.get("cancelled_at").isoformat()
@@ -695,6 +697,7 @@ def _to_order_item(r: dict) -> OrderItem:
         quantity=r["quantity"],
         line_total=float(r["line_total"]),
         instructions=r.get("instructions") or "",
+        serve_order=r.get("serve_order"),
         status=r["status"],
         previous_status=r.get("previous_status"),
         cancelled_at=r.get("cancelled_at").isoformat()

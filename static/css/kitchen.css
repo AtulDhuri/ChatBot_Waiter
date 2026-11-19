@@ -135,6 +135,7 @@ header button { cursor: pointer; background: #2e6cf0; border: none; }
   min-width: 0;
 }
 .item-qty { color: #9fb; font-weight: 800; }
+.item-seq { background: #3b2f63; color: #d9c7ff; border-radius: 999px; font-size: 11px; font-weight: 800; padding: 1px 7px; margin-right: 4px; flex: 0 0 auto; }
 .item-name { color: #eceff3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
 .item-note { font-size: 11px; color: #ffd27f; margin-left: 6px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .item-price { color: #8fd1ff; font-weight: 800; white-space: nowrap; flex-shrink: 0; margin-left: 8px; }

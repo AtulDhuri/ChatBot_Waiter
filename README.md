@@ -4,6 +4,11 @@ A FastAPI backend + embeddable chat widget for a restaurant "AI waiter": menu
 ingestion (PDF), retrieval-augmented Q&A, ordering, billing, UPI payment QR, and
 kitchen/reports/admin pages.
 
+**Signature feature: guest-controlled serving order.** Before placing an order,
+guests arrange their dishes in the sequence they want them served (drag or
+▲/▼). The sequence is stored per item (`order_items.serve_order`) and shown on
+the kitchen and manager screens.
+
 ## Requirements
 
 - Python 3.13 (a virtual environment already exists at `.venv`)

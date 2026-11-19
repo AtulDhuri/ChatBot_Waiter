@@ -342,6 +342,7 @@ class OrderItem(BaseModel):
     quantity: int = 1
     line_total: float = 0.0
     instructions: str = ""
+    serve_order: Optional[int] = None  # 1 = serve first
     status: str  # pending | accepted | preparing | ready | served | cancelled
     previous_status: Optional[str] = None
     cancelled_at: Optional[Any] = None

@@ -357,6 +357,8 @@ _SCHEMA_STATEMENTS = [
     "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;",
     "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL;",
     "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancel_reason TEXT;",
+    # Customer-chosen serving sequence (1 = serve first). NULL on legacy rows.
+    "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS serve_order INTEGER;",
     "ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_status_check;",
     "ALTER TABLE order_items ADD CONSTRAINT order_items_status_check CHECK (status IN ('pending', 'accepted', 'preparing', 'ready', 'served', 'cancelled'));",
     "CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items(order_id);",

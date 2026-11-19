@@ -151,7 +151,8 @@
         : '';
       var status = itemStatusPill(it);
       var cancelled = it.status === 'cancelled';
-      return "<div class='line" + (cancelled ? ' cancelled' : '') + "'><span class='nm'>" + esc(it.quantity) + '\xD7 ' + esc(it.name) +
+      var seq = it.serve_order && items.length > 1 ? '#' + esc(it.serve_order) + ' ' : '';
+      return "<div class='line" + (cancelled ? ' cancelled' : '') + "'><span class='nm'>" + seq + esc(it.quantity) + '\xD7 ' + esc(it.name) +
         " " + status + "</span><span class='amt'>" + money(cur, it.line_total) + '</span></div>' + note;
     }).join('');
   }

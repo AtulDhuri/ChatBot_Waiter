@@ -270,6 +270,9 @@
       return (
         "<div class='item-row item-st-" + esc(String(status).toLowerCase()) + "' data-item-id='" + esc(it.id) + "'>" +
         "<div class='item-left'>" +
+          (it.serve_order && items.length > 1
+            ? "<span class='item-seq' title='Serving order'>#" + esc(it.serve_order) + '</span>'
+            : '') +
           "<span class='item-qty'>" + esc(qty) + '\xD7</span>' +
           "<span class='item-name'>" + esc(it.name) + '</span>' + note +
         '</div>' +

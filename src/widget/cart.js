@@ -101,6 +101,26 @@ export function changeQty(name, delta) {
   updateCartBadge();
 }
 
+// Move the cart line at index `from` to index `to`. The cart array order is
+// the serving sequence: the server stores each line's position as serve_order.
+export function moveItem(from, to) {
+  var n = state.cart.length;
+  if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+  var moved = state.cart.splice(from, 1)[0];
+  state.cart.splice(to, 0, moved);
+  saveSession();
+  updateCartBadge();
+}
+
+// Label for the line at `index` of `count` lines in the serving sequence.
+export function serveLabel(index, count) {
+  if (index === 0) return "Serve First";
+  if (index === count - 1) return "Serve Last";
+  if (index === 1) return "Serve Second";
+  if (index === 2) return "Serve Third";
+  return "Serve #" + (index + 1);
+}
+
 export function removeItem(name) {
   state.cart = state.cart.filter(function (c) {
     return c.name !== name;

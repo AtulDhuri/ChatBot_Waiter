@@ -29,6 +29,8 @@ import {
   activeCart,
   setActiveCart,
   menuRows,
+  moveItem,
+  serveLabel,
 } from "./cart.js";
 import { startStatusPolling, showOrders, pollStatusOnce } from "./status.js";
 import {
@@ -324,6 +326,14 @@ export function showMenu() {
     });
 }
 
+// Attribute bag for a ▲/▼ button; `disabled` is only set when it applies
+// because el() would stringify a null value into a real attribute.
+function moveAttrs(label, isDisabled, handler) {
+  var a = { class: "wa-qty-btn wa-move", "aria-label": label, onclick: handler };
+  if (isDisabled) a.disabled = "disabled";
+  return a;
+}
+
 export function showCart() {
   if (!state.cart.length) {
     addMessage("Your order is empty. Browse the menu to add items.", "bot");
@@ -343,7 +353,19 @@ export function showCart() {
       return;
     }
 
-    state.cart.forEach(function (ci) {
+    var multi = state.cart.length > 1;
+    if (multi) {
+      card.appendChild(
+        el("div", { class: "wa-seq-head" }, [
+          el("div", { class: "wa-seq-title" }, ["Arrange serving order"]),
+          el("div", { class: "wa-mi-desc" }, [
+            "Tell us which dish you want first. Drag the ⠿ handle to reorder or use the ▲ ▼ buttons.",
+          ]),
+        ])
+      );
+    }
+
+    state.cart.forEach(function (ci, idx) {
       var name = ci.name;
       // Per-item note as a textarea. We attach the input handler with
       // addEventListener directly (NOT via el's on*) because el wraps on*
@@ -364,6 +386,7 @@ export function showCart() {
       // side by side; the note textarea sits BELOW them spanning the full row
       // width (so it isn't squeezed into the narrow info column).
       var top = el("div", { class: "wa-cart-top" }, [
+        el("div", { class: "wa-rank" }, [String(idx + 1)]),
         el("div", { class: "wa-cart-info" }, [
           el("div", { class: "wa-mi-name" }, [name]),
           el("div", { class: "wa-mi-desc" }, [
@@ -410,9 +433,71 @@ export function showCart() {
           ),
         ]),
       ]);
-      var line = el("div", { class: "wa-cart-row" }, [top, note]);
+      var line = el("div", { class: "wa-cart-row", "data-idx": String(idx) }, [top]);
+      if (multi) {
+        var last = state.cart.length - 1;
+        var handle = el(
+          "span",
+          { class: "wa-drag", "aria-label": "Drag to reorder " + name, title: "Drag to reorder" },
+          ["⠿"]
+        );
+        // Pointer events (not el's guarded on*) so dragging works on touch too.
+        handle.addEventListener("pointerdown", function (e) {
+          e.preventDefault();
+          var pid = e.pointerId;
+          line.classList.add("wa-dragging");
+          function done(ev) {
+            handle.removeEventListener("pointerup", done);
+            handle.removeEventListener("pointercancel", done);
+            line.classList.remove("wa-dragging");
+            if (ev.type !== "pointerup") return;
+            var under = document.elementFromPoint(ev.clientX, ev.clientY);
+            var row = under && under.closest ? under.closest(".wa-cart-row") : null;
+            if (!row || !card.contains(row)) return;
+            moveItem(idx, parseInt(row.getAttribute("data-idx"), 10));
+          }
+          handle.addEventListener("pointerup", done);
+          handle.addEventListener("pointercancel", done);
+          if (handle.setPointerCapture) {
+            try { handle.setPointerCapture(pid); } catch (err) {}
+          }
+        });
+        line.appendChild(
+          el("div", { class: "wa-seq-bar" }, [
+            el("span", { class: "wa-serve-chip" + (idx === 0 ? " first" : "") }, [
+              serveLabel(idx, state.cart.length),
+            ]),
+            el("div", { class: "wa-seq-ctl" }, [
+              el(
+                "button",
+                moveAttrs("Move " + name + " up", idx === 0, function () {
+                  moveItem(idx, idx - 1);
+                }),
+                ["▲"]
+              ),
+              el(
+                "button",
+                moveAttrs("Move " + name + " down", idx === last, function () {
+                  moveItem(idx, idx + 1);
+                }),
+                ["▼"]
+              ),
+              handle,
+            ]),
+          ])
+        );
+      }
+      line.appendChild(note);
       card.appendChild(line);
     });
+
+    if (multi) {
+      card.appendChild(
+        el("div", { class: "wa-serve-tip" }, [
+          "💡 Quick tip: you can change the serving order anytime before placing the order.",
+        ])
+      );
+    }
 
     card.appendChild(
       el("div", { class: "wa-cart-sum" }, ["Subtotal: " + money(cartTotal())])

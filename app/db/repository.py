@@ -882,24 +882,27 @@ async def create_order_items(
     Returns the inserted rows as dicts.
     """
     rows: List[Dict[str, Any]] = []
-    for it in line_items:
+    # The line position is the customer's chosen serving sequence (1 = first).
+    for idx, it in enumerate(line_items, start=1):
         row = (
             await session.execute(
                 text(
                     """
                     INSERT INTO order_items
                         (order_id, restaurant_id, menu_item_id, name, price,
-                         quantity, line_total, instructions, status, previous_status)
+                         quantity, line_total, instructions, status,
+                         previous_status, serve_order)
                     VALUES
                         (:oid, :rid, :mid, :name, :price, :qty, :lt, :instr,
-                         :status, :prev)
+                         :status, :prev, :so)
                     RETURNING id, order_id, restaurant_id, menu_item_id, name,
                               price, quantity, line_total, instructions, status,
                               previous_status, cancelled_at, cancelled_by,
-                              cancel_reason, created_at, updated_at
+                              cancel_reason, created_at, updated_at, serve_order
                     """
                 ),
                 {
+                    "so": idx,
                     "oid": order_id,
                     "rid": restaurant_id,
                     "mid": it.get("menu_item_id"),
@@ -928,10 +931,10 @@ async def get_order_items(
                 SELECT id, order_id, restaurant_id, menu_item_id, name, price,
                        quantity, line_total, instructions, status,
                        previous_status, cancelled_at, cancelled_by,
-                       cancel_reason, created_at, updated_at
+                       cancel_reason, created_at, updated_at, serve_order
                 FROM order_items
                 WHERE order_id = :oid
-                ORDER BY created_at ASC, id ASC
+                ORDER BY serve_order ASC NULLS LAST, created_at ASC, id ASC
                 """
             ),
             {"oid": order_id},
@@ -951,7 +954,7 @@ async def get_order_item(
                 SELECT id, order_id, restaurant_id, menu_item_id, name, price,
                        quantity, line_total, instructions, status,
                        previous_status, cancelled_at, cancelled_by,
-                       cancel_reason, created_at, updated_at
+                       cancel_reason, created_at, updated_at, serve_order
                 FROM order_items
                 WHERE id = :id
                 """
@@ -980,14 +983,14 @@ async def get_order_items_by_status(
                        oi.name, oi.price, oi.quantity, oi.line_total,
                        oi.instructions, oi.status, oi.previous_status,
                        oi.cancelled_at, oi.cancelled_by, oi.cancel_reason,
-                       oi.created_at, oi.updated_at,
+                       oi.created_at, oi.updated_at, oi.serve_order,
                        o.order_no, o.table_number, o.order_type,
                        o.customer_name, o.session_id
                 FROM order_items oi
                 JOIN orders o ON o.id = oi.order_id
                 WHERE oi.restaurant_id = :rid
                   AND oi.status IN ({', '.join(keys)})
-                ORDER BY oi.created_at ASC
+                ORDER BY oi.created_at ASC, oi.serve_order ASC NULLS LAST
                 """
             ),
             params,
@@ -1708,6 +1711,7 @@ async def list_manager_orders(
                     "instructions": it.get("instructions") or "",
                     "status": it["status"],
                     "id": it["id"],
+                    "serve_order": it.get("serve_order"),
                 }
                 for it in lifecycle_items
             ]
@@ -2101,10 +2105,10 @@ async def get_order_items_for_orders(
         SELECT id, order_id, restaurant_id, menu_item_id, name, price,
                quantity, line_total, instructions, status,
                previous_status, cancelled_at, cancelled_by,
-               cancel_reason, created_at, updated_at
+               cancel_reason, created_at, updated_at, serve_order
         FROM order_items
         WHERE order_id IN ({", ".join(placeholders)})
-        ORDER BY created_at ASC, id ASC
+        ORDER BY serve_order ASC NULLS LAST, created_at ASC, id ASC
     """
     rows = (await session.execute(text(query), params)).mappings().all()
     grouped: Dict[int, List[Dict[str, Any]]] = {}
