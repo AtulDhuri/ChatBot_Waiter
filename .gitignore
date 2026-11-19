@@ -12,7 +12,7 @@ uploads/
 *.pdf
 dist/
 .DS_Store
-
+demo-recording/
 # Node / widget build tooling (source in src/widget, bundle committed as static/widget.js)
 node_modules/
 npm-debug.log*

@@ -182,9 +182,15 @@
       "<div class='kpi'><div class='n'>" + over20 + "%</div><div class='l'>Orders over 20 min</div></div>";
   }
 
+  // Includes per-item statuses: a single dish becoming ready often leaves the
+  // order-level status unchanged, and we must still re-render so the
+  // item-ready alert fires.
   function signature(orders) {
     return (orders || []).map(function (o) {
-      return o.id + ':' + o.status + ':' + o.payment_status + ':' + o.total;
+      var items = (o.items || []).map(function (it) {
+        return (it.id || it.name) + '=' + (it.status || '');
+      }).join(',');
+      return o.id + ':' + o.status + ':' + o.payment_status + ':' + o.total + ':' + items;
     }).join('|');
   }
 
