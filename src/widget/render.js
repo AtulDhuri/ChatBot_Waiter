@@ -183,13 +183,16 @@ export function buildPanel() {
     document.createTextNode(CONFIG.title),
     el("small", {}, [_headerSub()]),
   ]);
-  var header = el("header", { class: "wa-header" }, [ui.titleEl, ui.badge]);
+  var header = el("header", { class: "wa-header" }, [ui.titleEl]);
 
   ui.body = el("div", { class: "wa-body" });
   ui.footer = el("div", { class: "wa-footer" });
+  // The order summary floats between the scrolling content and the footer so
+  // it stays pinned and within thumb reach without covering menu items.
   ui.panel = el("div", { class: "wa-panel", role: "dialog" }, [
     header,
     ui.body,
+    ui.badge,
     ui.footer,
   ]);
   document.body.appendChild(ui.panel);

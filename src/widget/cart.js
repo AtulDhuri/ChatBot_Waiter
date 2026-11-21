@@ -57,7 +57,7 @@ var _syncingCart = false;
 export function updateCartBadge() {
   if (ui.badge) {
     var c = cartCount();
-    ui.badge.textContent = "🛒 " + c + " Item" + (c === 1 ? "" : "s") + " • " + money(cartTotal());
+    ui.badge.textContent = c + " item" + (c === 1 ? "" : "s") + " · " + money(cartTotal());
     ui.badge.style.display = c > 0 ? "inline-flex" : "none";
   }
   if (ui.dockUpdate) ui.dockUpdate();

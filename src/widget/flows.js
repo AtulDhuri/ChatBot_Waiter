@@ -158,7 +158,7 @@ export function menuItemRow(item) {
               addToCart(item);
             },
           },
-          ["Add"]
+          ["+ Add"]
         )
       );
     }
@@ -204,21 +204,22 @@ export function showMenu() {
       var chipBar = el("div", { class: "wa-quick wa-cat-chips" });
       var chipEls = {};
       function makeChip(key, label) {
-        var c = el(
-          "button",
-          {
-            class: "wa-chip",
-            onclick: function () {
-              activeCat = key;
-              Object.keys(chipEls).forEach(function (k) {
-                chipEls[k].className =
-                  "wa-chip" + (k === key ? " wa-chip-on" : "");
-              });
-              filterList(search.value);
-            },
-          },
-          [label]
-        );
+        // Attached with addEventListener (not el's on*) so the click guard
+        // doesn't swap the label for a spinner on a purely local filter.
+        var c = el("button", { class: "wa-chip", type: "button" }, [label]);
+        c.addEventListener("click", function () {
+          activeCat = key;
+          Object.keys(chipEls).forEach(function (k) {
+            chipEls[k].className =
+              "wa-chip" + (k === key ? " wa-chip-on" : "");
+          });
+          filterList(search.value);
+          if (typeof c.scrollIntoView === "function") {
+            try {
+              c.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+            } catch (e) {}
+          }
+        });
         chipEls[key] = c;
         return c;
       }
@@ -233,8 +234,10 @@ export function showMenu() {
       var count = el("div", { class: "wa-mi-desc wa-menu-count" }, []);
       var noMatch = el("div", { class: "wa-mi-desc", style: "display:none" }, [""]);
       var results = el("div", {});
-      wrap.appendChild(search);
-      if (cats.length > 1) wrap.appendChild(chipBar);
+      var head = el("div", { class: "wa-menu-head" });
+      head.appendChild(search);
+      if (cats.length > 1) head.appendChild(chipBar);
+      wrap.appendChild(head);
       wrap.appendChild(count);
       wrap.appendChild(results);
       wrap.appendChild(noMatch);
@@ -307,7 +310,16 @@ export function showMenu() {
       });
 
       filterList("");
-      addMessage(null, "bot", wrap);
+      var menuMsg = addMessage(null, "bot", wrap);
+      if (menuMsg.firstChild) menuMsg.firstChild.className += " wa-menu-bubble";
+      // Open at the top of the menu (search + categories) instead of its end.
+      ui.body.scrollTop = Math.max(
+        0,
+        menuMsg.getBoundingClientRect().top -
+          ui.body.getBoundingClientRect().top +
+          ui.body.scrollTop -
+          8
+      );
     })
     .catch(function (error) {
       var msg = error && error.message ? error.message : "";
@@ -566,6 +578,33 @@ function ensureQrLib() {
   return _qrLoading;
 }
 
+// Render a QR that phone cameras and UPI apps can reliably read on a dark UI:
+// every module is a whole number of pixels (no blurry edges) and the code sits
+// on a white plate with a 4-module quiet zone, as the QR spec requires.
+function drawScannableQr(QRCode, box, text, target) {
+  var level = QRCode.CorrectLevel.M;
+  var modules = 41;
+  try {
+    var probe = new QRCode(document.createElement("div"), {
+      text: text,
+      width: 64,
+      height: 64,
+      correctLevel: level,
+    });
+    modules = probe._oQRCode.getModuleCount();
+  } catch (e) {}
+  var scale = Math.max(3, Math.floor(target / modules));
+  var size = modules * scale;
+  box.style.padding = scale * 4 + "px";
+  box.style.background = "#fff";
+  box.style.borderRadius = "14px";
+  box.style.width = "fit-content";
+  box.style.maxWidth = "100%";
+  box.style.boxSizing = "content-box";
+  box.style.margin = "14px auto";
+  new QRCode(box, { text: text, width: size, height: size, correctLevel: level });
+}
+
 export function showPayment() {
   var isPostpaid = state.paymentMode === "postpaid";
   if (!isPostpaid && !state.cart.length) {
@@ -702,12 +741,7 @@ export function showPayment() {
       ensureQrLib()
         .then(function (QRCode) {
           qrBox.innerHTML = "";
-          new QRCode(qrBox, {
-            text: pay.upi_uri,
-            width: 200,
-            height: 200,
-            correctLevel: QRCode.CorrectLevel.M,
-          });
+          drawScannableQr(QRCode, qrBox, pay.upi_uri, 220);
         })
         .catch(function () {
           qrBox.innerHTML =

@@ -35,8 +35,13 @@ def build_upi_uri(
         ("cu", currency),
     ]
     if note:
-        params.append(("tn", note))
-    query = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params)
+        # UPI apps cap the note at 50 chars; shorter also keeps the QR less dense.
+        params.append(("tn", note[:50]))
+    # Keep "@" literal in the VPA: the NPCI format uses pa=name@bank and some
+    # UPI apps reject the percent-encoded form (name%40bank).
+    query = "&".join(
+        f"{k}={quote(str(v), safe='@' if k == 'pa' else '')}" for k, v in params
+    )
     return f"upi://pay?{query}"
 
 

@@ -158,8 +158,11 @@ a.btnlink {
 
 .qr-print-code {
   background: #fff;
-  padding: 4px;
   margin-bottom: 8px;
+}
+#qrcode img, #qrcode canvas, .qr-print-code img, .qr-print-code canvas {
+  display: block;
+  image-rendering: pixelated;
 }
 
 .qr-print-url {

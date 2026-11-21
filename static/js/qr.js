@@ -35,12 +35,20 @@
 
   function buildQr(container, url) {
     if (window.QRCode) {
-      new QRCode(container, {
-        text: url,
-        width: 180,
-        height: 180,
-        correctLevel: QRCode.CorrectLevel.M,
-      });
+      // Whole-pixel modules + a 4-module white quiet zone so phone cameras
+      // can read the code reliably (fixed 180px made modules uneven).
+      var level = QRCode.CorrectLevel.M;
+      var modules = 41;
+      try {
+        modules = new QRCode(document.createElement('div'), {
+          text: url, width: 64, height: 64, correctLevel: level,
+        })._oQRCode.getModuleCount();
+      } catch (e) {}
+      var scale = Math.max(3, Math.floor(220 / modules));
+      var size = modules * scale;
+      container.style.padding = scale * 4 + 'px';
+      container.style.background = '#fff';
+      new QRCode(container, { text: url, width: size, height: size, correctLevel: level });
     } else {
       container.innerHTML =
         "<p class='muted'>QR library unavailable.</p>" +
@@ -92,8 +100,11 @@
       .then(function (data) {
         renderQr(takeawayUrl(data.token), 'takeaway');
       })
-    btn.disabled = false;
-    btn.textContent = old;
+      .catch(function (err) { alert(err.message); })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = old;
+      });
   });
 
   // ── Print-all tables ───────────────────────────────────────────────────
