@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import repository as repo
 from app.config import settings
-from app.routes.deps import get_db, require_staff
+from app.routes.deps import get_db, invalidate_auth_cache, require_staff
 from app.services.auth import audit, create_reset_token, decode_token, hash_password, issue_token, token_from_request, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -163,9 +163,11 @@ async def reset_password(body: ResetPasswordIn, request: Request, response: Resp
     response.delete_cookie(settings.auth_cookie_name, path="/")
     return {"ok": True, "message": "Password reset successfully. Please sign in."}
 
+@router.post("/logout")
 async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     token = token_from_request(request)
     if token:
+        invalidate_auth_cache(token)
         try:
             payload = decode_token(token)
             await audit(db, "LOGOUT", user_id=payload.get("userId"), tenant_id=payload.get("tenantId"), request=request)

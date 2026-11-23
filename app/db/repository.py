@@ -857,6 +857,26 @@ def _compute_order_status(statuses: List[str]) -> str:
     return ORDER_NEW
 
 
+async def _lock_order(session: AsyncSession, order_id: Any) -> None:
+    """Serialize concurrent item updates on the same order.
+
+    The kitchen's bulk actions ("Mark served all") PATCH every item of an order
+    in parallel. Without this lock each transaction re-reads the sibling items
+    before the others commit, and the last writer can store a stale status
+    (e.g. 'partially_served' for a fully served order), which then blocks the
+    table from closing. Taking the parent row lock before re-reading the items
+    makes each recompute see every committed sibling update (READ COMMITTED).
+
+    FOR NO KEY UPDATE (not FOR UPDATE): the history INSERT earlier in the same
+    transaction already holds a FOR KEY SHARE lock on this row through its
+    foreign key. FOR UPDATE conflicts with KEY SHARE and deadlocks two parallel
+    item updates; NO KEY UPDATE does not, yet still serializes the recomputes.
+    """
+    await session.execute(
+        text("SELECT id FROM orders WHERE id = :oid FOR NO KEY UPDATE"), {"oid": order_id}
+    )
+
+
 def _recompute_order_total(restaurant_id: int, items: List[Dict[str, Any]]) -> tuple[float, float, float]:
     """Recompute subtotal/tax/total from non-cancelled order items."""
     subtotal = 0.0
@@ -1086,6 +1106,7 @@ async def update_item_status(
     )
 
     # Recompute parent order status from all its item statuses + adjust total.
+    await _lock_order(session, row["order_id"])
     items = await get_order_items(session, row["order_id"])
     statuses = [it["status"] for it in items]
     order_status = _compute_order_status(statuses)
@@ -1231,6 +1252,7 @@ async def cancel_item(
     )
 
     # Recompute parent order status + total.
+    await _lock_order(session, row["order_id"])
     items = await get_order_items(session, row["order_id"])
     statuses = [it["status"] for it in items]
     order_status = _compute_order_status(statuses)
@@ -1346,6 +1368,7 @@ async def reduce_item_quantity(
         },
     )
 
+    await _lock_order(session, row["order_id"])
     items = await get_order_items(session, row["order_id"])
     statuses = [it["status"] for it in items]
     order_status = _compute_order_status(statuses)
