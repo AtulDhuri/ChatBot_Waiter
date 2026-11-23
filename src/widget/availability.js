@@ -20,6 +20,10 @@ export function syncAvailability() {
   if (_availInFlight) return Promise.resolve(false);
   _availInFlight = true;
 
+  // Bypass the 60 s in-memory menu cache: this sync exists to catch sold-out
+  // / price changes, and serving the cache made each poll a no-op for a
+  // minute. The server answers 304 when nothing changed, so this stays cheap.
+  invalidateMenuCache();
   return fetchMenu()
     .then(function (data) {
       _availFailStreak = 0;

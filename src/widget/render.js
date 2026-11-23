@@ -175,6 +175,14 @@ function _headerSub() {
   return state.tableNumber ? "Table " + state.tableNumber : "Tap to order";
 }
 
+// Re-render the header subtitle ("Table 12" / "Takeaway · Riya") once the
+// session is known; it is first drawn before the QR token has resolved.
+export function refreshHeader() {
+  if (!ui.titleEl) return;
+  var small = ui.titleEl.querySelector("small");
+  if (small) small.textContent = _headerSub();
+}
+
 export function buildPanel() {
   ui.badge = el("button", { class: "wa-cart-badge", onclick: showCart, "aria-label": "Open cart" }, ["🛒 0 Items • ₹0"]);
   ui.badge.style.display = "none";

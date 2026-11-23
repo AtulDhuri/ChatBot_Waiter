@@ -97,8 +97,12 @@ export function renderStatus(data, moveToBottom) {
 
   if (state.statusNode && state.statusNode.parentNode) {
     if (moveToBottom && ui.body) {
-      state.statusNode.parentNode.removeChild(state.statusNode);
-      ui.body.appendChild(card);
+      // Drop the old chat message as a whole (not just the card) so no
+      // empty bubble is left behind, then re-add the card as a new message.
+      var oldMsg = state.statusNode.closest ? state.statusNode.closest(".wa-msg") : null;
+      var stale = oldMsg || state.statusNode;
+      stale.parentNode.removeChild(stale);
+      addMessage(null, "bot", card);
     } else {
       state.statusNode.parentNode.replaceChild(card, state.statusNode);
     }

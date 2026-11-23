@@ -54,7 +54,11 @@ export function placeOrder(orderType) {
       state.billNode = null;
       state.billPayBtn = null;
       if (activeCart && activeCart.card && activeCart.card.parentNode) {
-        activeCart.card.parentNode.removeChild(activeCart.card);
+        // Remove the whole chat message, not just the card, so no empty
+        // bubble is left behind in the transcript.
+        var cartMsg = activeCart.card.closest ? activeCart.card.closest(".wa-msg") : null;
+        var gone = cartMsg || activeCart.card;
+        gone.parentNode.removeChild(gone);
       }
       setActiveCart(null);
       clearCart();

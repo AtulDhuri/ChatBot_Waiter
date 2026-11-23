@@ -14,7 +14,7 @@ import {
 } from "./config.js";
 import { state, ui, saveSession } from "./state.js";
 import { addMessage } from "./dom.js";
-import { renderChat, renderQuickChips, renderTablePrompt } from "./render.js";
+import { renderChat, renderQuickChips, renderTablePrompt, refreshHeader } from "./render.js";
 import { updateCartBadge } from "./cart.js";
 import {
   resumeStatusPollingIfNeeded,
@@ -45,6 +45,10 @@ export function startSession(label) {
         if (ui.titleEl) ui.titleEl.firstChild.textContent = CONFIG.title;
       }
       saveSession();
+      refreshHeader();
+      // Subscribe right away so sold-out changes reach the cart before the
+      // first order (previously the stream only opened after ordering).
+      resumeStatusPollingIfNeeded();
       prefetchMenu();
       return data;
     });
@@ -73,6 +77,8 @@ export function startSession(label) {
         if (ui.titleEl) ui.titleEl.firstChild.textContent = CONFIG.title;
       }
       saveSession();
+      refreshHeader();
+      resumeStatusPollingIfNeeded();
       return data;
     });
 }
@@ -112,6 +118,7 @@ export function resolveQrToken() {
       state.cart = Array.isArray(data.cart) ? data.cart : [];
       applyRestaurantName(data.restaurant_name || CONFIG.title);
       saveSession();
+      refreshHeader();
 
       if (ui.panel) {
         renderChat();
